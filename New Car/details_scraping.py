@@ -6,15 +6,13 @@ from dateutil.relativedelta import relativedelta
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from scraper_utils import get_random_headers, random_delay, rotate_user_agent, configure_session_proxy
+from scraper_utils import get_random_headers, random_delay, rotate_user_agent, configure_session_proxy, create_session
 
 class DetailsScraping:
     def __init__(self, url, browser=None):
         self.url = url
         self.browser = browser
-        self.session = requests.Session()
-        self.session.headers.update(get_random_headers())
-        configure_session_proxy(self.session)
+        self.session = create_session()
 
     async def get_car_details(self):
         cars = []

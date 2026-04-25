@@ -15,7 +15,7 @@ from car_scraper import CarScraper
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from scraper_utils import get_random_headers, random_delay, rotate_user_agent, configure_session_proxy
+from scraper_utils import get_random_headers, random_delay, rotate_user_agent, configure_session_proxy, create_session
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,9 +32,7 @@ class MainScraper:
         self.chunk_size = 3
         self.chunk_delay = 5
         self.yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-        self.session = requests.Session()
-        self.session.headers.update(get_random_headers())
-        configure_session_proxy(self.session)
+        self.session = create_session()
         logger.info(f"Scraping data for date: {self.yesterday}")
 
     async def upload_bytes_to_s3(self, data_bytes, s3_path):

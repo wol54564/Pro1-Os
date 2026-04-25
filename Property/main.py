@@ -10,7 +10,7 @@ from s3_uploader import S3Uploader
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from scraper_utils import get_random_headers, random_delay, rotate_user_agent, configure_session_proxy
+from scraper_utils import get_random_headers, random_delay, rotate_user_agent, configure_session_proxy, create_session
 
 # Setup logging
 logging.basicConfig(
@@ -26,9 +26,7 @@ AWS_BUCKET = "data-collection-dl"
 s3 = S3Uploader(AWS_BUCKET)
 
 BASE_URL = "https://www.q84sale.com/ar/property"
-SESSION = requests.Session()
-SESSION.headers.update(get_random_headers())
-configure_session_proxy(SESSION)
+SESSION = create_session()
 
 async def get_property_subcategories():
     logger.info(f"Fetching property subcategories from {BASE_URL}")

@@ -7,6 +7,7 @@ import random
 import time
 import asyncio
 from typing import Optional
+from curl_cffi import requests as curl_requests
 
 
 # Pool of realistic user agents
@@ -96,15 +97,14 @@ def setup_session_with_random_headers(session) -> None:
 
 def rotate_user_agent(session) -> None:
     """
-    Rotate the user agent in an existing session
-    
-    Args:
-        session: requests.Session object to update
+    Rotate the user agent in an existing session.
+    For curl_cffi sessions this is a no-op — impersonation handles headers.
     """
-    session.headers['User-Agent'] = get_random_user_agent()
+    if not isinstance(session, curl_requests.Session):
+        session.headers['User-Agent'] = get_random_user_agent()
 
 
-# Webshare rotating proxy configuration
+# Webshare rotating proxy configuration (kept for reference / fallback use)
 PROXIES = {
     "http": "http://yicfjhey-rotate:u9agrcjm8k8x@p.webshare.io:80/",
     "https": "http://yicfjhey-rotate:u9agrcjm8k8x@p.webshare.io:80/",
@@ -113,10 +113,16 @@ PROXIES = {
 
 def configure_session_proxy(session) -> None:
     """
-    Configure a requests.Session to route all traffic through the Webshare rotating proxy.
-    This helps bypass 403 Forbidden errors by rotating IP addresses on each request.
-
-    Args:
-        session: requests.Session object to configure
+    Configure a requests.Session to route traffic through the Webshare rotating proxy.
+    NOTE: Not applied by default — CloudFront WAF blocks datacenter proxy IPs.
+    Only use if your target site does not block datacenter IPs.
     """
     session.proxies.update(PROXIES)
+
+
+def create_session() -> curl_requests.Session:
+    """
+    Create a curl_cffi Session that impersonates Chrome's TLS fingerprint.
+    This bypasses CloudFront/AWS WAF bot detection without needing a proxy.
+    """
+    return curl_requests.Session(impersonate="chrome124")

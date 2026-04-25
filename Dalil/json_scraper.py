@@ -11,7 +11,7 @@ import re
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from scraper_utils import get_random_headers, random_delay, rotate_user_agent, configure_session_proxy
+from scraper_utils import get_random_headers, random_delay, rotate_user_agent, configure_session_proxy, create_session
 
 # Set to INFO for normal runs, DEBUG for troubleshooting
 logging.basicConfig(level=logging.INFO)
@@ -26,9 +26,7 @@ class DalilJsonScraper:
     
     def __init__(self):
         self.base_url = "https://directory.q84sale.com/ar"
-        self.session = requests.Session()
-        self.session.headers.update(get_random_headers())
-        configure_session_proxy(self.session)
+        self.session = create_session()
         
         # All category slugs
         self.categories = [

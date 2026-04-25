@@ -10,7 +10,7 @@ from dateutil.relativedelta import relativedelta
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from scraper_utils import get_random_headers, random_delay, rotate_user_agent, configure_session_proxy
+from scraper_utils import get_random_headers, random_delay, rotate_user_agent, configure_session_proxy, create_session
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,9 +30,7 @@ class RestAutomotiveJsonScraper:
             "car-offices": "https://www.q84sale.com/ar/businesses/car-offices",
             "car-rental": "https://www.q84sale.com/ar/automotive/car-rental"
         }
-        self.session = requests.Session()
-        self.session.headers.update(get_random_headers())
-        configure_session_proxy(self.session)
+        self.session = create_session()
         
     async def init_browser(self):
         """Compatibility method - not needed with BeautifulSoup"""

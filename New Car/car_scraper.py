@@ -4,15 +4,13 @@ from bs4 import BeautifulSoup
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from scraper_utils import get_random_headers, random_delay, rotate_user_agent, configure_session_proxy
+from scraper_utils import get_random_headers, random_delay, rotate_user_agent, configure_session_proxy, create_session
 
 class CarScraper:
     def __init__(self, url):
         self.url = url
         self.base_url = "https://www.q84sale.com"
-        self.session = requests.Session()
-        self.session.headers.update(get_random_headers())
-        configure_session_proxy(self.session)
+        self.session = create_session()
         self.data = []
 
     async def scrape_brands_and_types(self):

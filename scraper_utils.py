@@ -98,31 +98,100 @@ def setup_session_with_random_headers(session) -> None:
 def rotate_user_agent(session) -> None:
     """
     Rotate the user agent in an existing session.
-    For curl_cffi sessions this is a no-op — impersonation handles headers.
+    For curl_cffi/SmartSession this is a no-op — impersonation handles headers.
     """
+    if isinstance(session, SmartSession):
+        return
     if not isinstance(session, curl_requests.Session):
         session.headers['User-Agent'] = get_random_user_agent()
 
 
-# Webshare rotating proxy configuration (kept for reference / fallback use)
+# Webshare Kuwait residential rotating proxy
+# Using Kuwait geo-targeted residential IPs to match the target site's region
 PROXIES = {
-    "http": "http://yicfjhey-rotate:u9agrcjm8k8x@p.webshare.io:80/",
-    "https": "http://yicfjhey-rotate:u9agrcjm8k8x@p.webshare.io:80/",
+    "http": "http://yicfjheyresidential-KW-1:u9agrcjm8k8x@p.webshare.io:80/",
+    "https": "http://yicfjheyresidential-KW-1:u9agrcjm8k8x@p.webshare.io:80/",
 }
 
 
 def configure_session_proxy(session) -> None:
-    """
-    Configure a requests.Session to route traffic through the Webshare rotating proxy.
-    NOTE: Not applied by default — CloudFront WAF blocks datacenter proxy IPs.
-    Only use if your target site does not block datacenter IPs.
-    """
+    """Configure a session to use the Kuwait residential proxy."""
     session.proxies.update(PROXIES)
 
 
-def create_session() -> curl_requests.Session:
+# Impersonation profiles to cycle through on retries
+_IMPERSONATION_PROFILES = [
+    "chrome124",
+    "chrome120",
+    "chrome131",
+    "safari18_0",
+    "chrome116",
+]
+
+
+class SmartSession:
     """
-    Create a curl_cffi Session that impersonates Chrome's TLS fingerprint.
-    This bypasses CloudFront/AWS WAF bot detection without needing a proxy.
+    Drop-in replacement for requests.Session that:
+    1. Uses curl_cffi to impersonate a real browser TLS fingerprint
+    2. Always routes through the Kuwait residential proxy (required for q84sale.com)
+    3. Auto-retries with rotating impersonation profiles on 403
     """
-    return curl_requests.Session(impersonate="chrome124")
+
+    def __init__(self):
+        self._profile_index = 0
+        self._session = curl_requests.Session(
+            impersonate=_IMPERSONATION_PROFILES[0],
+            proxies=PROXIES,
+        )
+
+    def _next_profile(self):
+        self._profile_index = (self._profile_index + 1) % len(_IMPERSONATION_PROFILES)
+        return _IMPERSONATION_PROFILES[self._profile_index]
+
+    def get(self, url, **kwargs):
+        last_exc = None
+        for attempt in range(len(_IMPERSONATION_PROFILES)):
+            try:
+                if attempt > 0:
+                    profile = self._next_profile()
+                    time.sleep(random.uniform(2.0, 4.0))
+                    self._session = curl_requests.Session(
+                        impersonate=profile,
+                        proxies=PROXIES,
+                    )
+
+                response = self._session.get(url, **kwargs)
+
+                if response.status_code == 403:
+                    last_exc = Exception(f"HTTP Error 403: ")
+                    continue
+
+                return response
+
+            except Exception as e:
+                if "403" in str(e):
+                    last_exc = e
+                    continue
+                raise
+
+        raise last_exc or Exception("All retry attempts failed with 403")
+
+    def close(self):
+        if self._session:
+            self._session.close()
+
+    @property
+    def headers(self):
+        return self._session.headers
+
+    @property
+    def proxies(self):
+        return self._session.proxies
+
+
+def create_session() -> SmartSession:
+    """
+    Create a SmartSession that impersonates Chrome's TLS fingerprint and
+    automatically retries with different profiles and proxy fallback on 403.
+    """
+    return SmartSession()

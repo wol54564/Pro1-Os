@@ -2,7 +2,7 @@ name: General Scrapers
 
 on:
   schedule:
-    - cron: '0 3 * * *'  # Run daily at 3 AM UTC (triggers the workflow chain)
+    - cron: '0 0 * * *'  # Run daily at 12 AM UTC (triggers the workflow chain)
   workflow_dispatch:
     inputs:
       category:

@@ -3,11 +3,16 @@ Shared utilities for all scrapers to make requests appear more human-like
 Includes random delays, user-agent rotation, and request header randomization
 """
 
+import os
 import random
 import time
 import asyncio
+import logging
 from typing import Optional
+from urllib.parse import quote_plus
 from curl_cffi import requests as curl_requests
+
+logger = logging.getLogger(__name__)
 
 
 # Pool of realistic user agents
@@ -129,12 +134,27 @@ _IMPERSONATION_PROFILES = [
 ]
 
 
+class _CachedResponse:
+    """Minimal response-like object served from the URL cache (costs 0 credits)."""
+
+    status_code = 200
+
+    def __init__(self, text: str):
+        self.text = text
+        self.content = text.encode("utf-8")
+
+    def raise_for_status(self):
+        pass
+
+
 class SmartSession:
     """
     Drop-in replacement for requests.Session that:
     1. Uses curl_cffi to impersonate a real browser TLS fingerprint
     2. Always routes through the Kuwait residential proxy (required for q84sale.com)
     3. Auto-retries with rotating impersonation profiles on 403
+    4. Caches page responses — duplicate URL fetches (e.g. catchilds + listings
+       page 1 hit the same URL) are served from memory at zero cost.
     """
 
     def __init__(self):
@@ -143,12 +163,20 @@ class SmartSession:
             impersonate=_IMPERSONATION_PROFILES[0],
             proxies=PROXIES,
         )
+        self._cache: dict = {}  # URL → response text; avoids duplicate fetches
+        self.request_count = 0
+        self.cache_hits = 0
 
     def _next_profile(self):
         self._profile_index = (self._profile_index + 1) % len(_IMPERSONATION_PROFILES)
         return _IMPERSONATION_PROFILES[self._profile_index]
 
     def get(self, url, **kwargs):
+        # Serve from cache — avoids duplicate page fetches at zero cost
+        if url in self._cache:
+            self.cache_hits += 1
+            return _CachedResponse(self._cache[url])
+
         last_exc = None
         for attempt in range(len(_IMPERSONATION_PROFILES)):
             try:
@@ -166,6 +194,8 @@ class SmartSession:
                     last_exc = Exception(f"HTTP Error 403: ")
                     continue
 
+                self.request_count += 1
+                self._cache[url] = response.text
                 return response
 
             except Exception as e:
@@ -189,9 +219,79 @@ class SmartSession:
         return self._session.proxies
 
 
-def create_session() -> SmartSession:
+class ScrapedoSession:
     """
-    Create a SmartSession that impersonates Chrome's TLS fingerprint and
-    automatically retries with different profiles and proxy fallback on 403.
+    Drop-in SmartSession replacement that routes ALL page requests through
+    scrape.do (Kuwait residential + super gateway) to bypass 403 on q84sale.com.
+
+    Optimisations vs SmartSession:
+    - URL-level cache: duplicate requests (e.g. catchilds + listings page 1
+      point to the same URL) cost 0 scrape.do credits.
+    - Falls back through three strategies: super-only → render-only → render+super,
+      stopping on first success so credits are spent only as needed.
+
+    Activated automatically by create_session() when SCRAPEDO_TOKEN is set.
     """
+
+    _ENDPOINT = "https://api.scrape.do"
+    _STRATEGIES = [
+        {"super": "true", "geoCode": "kw"},
+        {"render": "true", "geoCode": "kw"},
+        {"render": "true", "super": "true", "geoCode": "kw"},
+    ]
+
+    def __init__(self, token: str):
+        self._token = token
+        self._cache: dict = {}  # URL → response text
+        self.request_count = 0  # scrape.do API calls made (credits used)
+        self.cache_hits = 0     # requests served from cache (free)
+
+    def get(self, url, **kwargs):
+        # Serve from cache — costs 0 credits
+        if url in self._cache:
+            self.cache_hits += 1
+            return _CachedResponse(self._cache[url])
+
+        last_resp = None
+        for params in self._STRATEGIES:
+            qs = "&".join(f"{k}={v}" for k, v in params.items())
+            api_url = f"{self._ENDPOINT}?token={self._token}&url={quote_plus(url)}&{qs}"
+            label = ", ".join(f"{k}={v}" for k, v in params.items())
+            try:
+                resp = curl_requests.get(api_url, timeout=120)
+                self.request_count += 1
+                if resp.status_code == 200:
+                    self._cache[url] = resp.text
+                    return resp
+                logger.warning(f"scrape.do [{label}] → HTTP {resp.status_code}, trying next strategy")
+                last_resp = resp
+            except Exception as exc:
+                logger.warning(f"scrape.do [{label}] error: {exc}")
+
+        if last_resp is not None:
+            return last_resp
+        raise Exception("All scrape.do strategies failed")
+
+    def close(self):
+        pass
+
+    @property
+    def headers(self):
+        return {}
+
+    @property
+    def proxies(self):
+        return {}
+
+
+def create_session():
+    """
+    Return a ScrapedoSession when SCRAPEDO_TOKEN is set in the environment,
+    otherwise fall back to the curl_cffi-based SmartSession.
+    """
+    token = os.environ.get("SCRAPEDO_TOKEN", "")
+    if token:
+        logger.info("Using ScrapedoSession — routing via scrape.do (Kuwait, super proxy)")
+        return ScrapedoSession(token)
+    logger.info("Using SmartSession — curl_cffi + Webshare Kuwait residential proxy")
     return SmartSession()

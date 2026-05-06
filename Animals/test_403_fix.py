@@ -27,21 +27,47 @@ SCRAPEDO_ENDPOINT = "https://api.scrape.do"
 
 
 def fetch_via_scrapedo(target_url: str, token: str) -> requests.Response:
-    """Fetch *target_url* through scrape.do using *token*.
+    """Fetch *target_url* through scrape.do trying multiple strategies.
 
-    - Render=True  : runs a real headless Chrome so JS-rendered pages load fully.
-    - Super=True   : routes through residential/mobile proxies (required for
-                     geo-restricted or heavily bot-protected sites like q84sale).
+    q84sale is a Next.js SSR site — __NEXT_DATA__ is in the raw HTML, so JS
+    rendering is not required.  We try strategies in order of cost/complexity:
+
+      1. super=true only   — residential proxy, plain HTTP (cheapest)
+      2. render=true only  — headless Chrome, datacenter proxy
+      3. render+super      — headless Chrome + residential proxy (most expensive)
     """
-    api_url = (
-        f"{SCRAPEDO_ENDPOINT}"
-        f"?token={token}"
-        f"&url={quote_plus(target_url)}"
-        f"&render=true"
-        f"&super=true"
-    )
-    response = requests.get(api_url, timeout=120)
-    return response
+    strategies = [
+        {"super": "true", "geoCode": "kw"},
+        {"render": "true", "geoCode": "kw"},
+        {"render": "true", "super": "true", "geoCode": "kw"},
+    ]
+
+    for i, params in enumerate(strategies, 1):
+        qs = "&".join(f"{k}={v}" for k, v in params.items())
+        api_url = f"{SCRAPEDO_ENDPOINT}?token={token}&url={quote_plus(target_url)}&{qs}"
+        label = ", ".join(f"{k}={v}" for k, v in params.items())
+        print(f"  Strategy {i} ({label}) ...")
+        try:
+            resp = requests.get(api_url, timeout=120)
+        except Exception as exc:
+            print(f"    Request error: {exc}")
+            continue
+
+        print(f"  → HTTP {resp.status_code}")
+
+        if resp.status_code == 200:
+            return resp
+
+        # scrape.do 502/4xx with a JSON error body — log and try next strategy
+        try:
+            err = resp.json()
+            msg = err.get("Message", resp.text[:200])
+        except Exception:
+            msg = resp.text[:200]
+        print(f"    scrape.do error: {msg}")
+
+    # Return the last response so the caller can surface the final status code
+    return resp
 
 
 def parse_next_data(html: str) -> dict:
@@ -93,14 +119,7 @@ def main():
         sys.exit(1)
 
     if resp.status_code != 200:
-        print(f"FAIL  Unexpected status code {resp.status_code}")
-        print("Response body (first 500 chars):", resp.text[:500])
-        if resp.status_code == 502:
-            print(
-                "\nHINT: 502 from scrape.do usually means the target refused the connection.\n"
-                "      The request is now sent with Render=True + Super=True which should fix it.\n"
-                "      If it persists, check your scrape.do quota or try again in a few seconds."
-            )
+        print(f"FAIL  All strategies failed. Last status code: {resp.status_code}")
         sys.exit(1)
 
     print("PASS  HTTP 200 received — 403 is bypassed!")

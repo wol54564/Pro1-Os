@@ -27,9 +27,20 @@ SCRAPEDO_ENDPOINT = "https://api.scrape.do"
 
 
 def fetch_via_scrapedo(target_url: str, token: str) -> requests.Response:
-    """Fetch *target_url* through scrape.do using *token*."""
-    api_url = f"{SCRAPEDO_ENDPOINT}?token={token}&url={quote_plus(target_url)}"
-    response = requests.get(api_url, timeout=60)
+    """Fetch *target_url* through scrape.do using *token*.
+
+    - Render=True  : runs a real headless Chrome so JS-rendered pages load fully.
+    - Super=True   : routes through residential/mobile proxies (required for
+                     geo-restricted or heavily bot-protected sites like q84sale).
+    """
+    api_url = (
+        f"{SCRAPEDO_ENDPOINT}"
+        f"?token={token}"
+        f"&url={quote_plus(target_url)}"
+        f"&render=true"
+        f"&super=true"
+    )
+    response = requests.get(api_url, timeout=120)
     return response
 
 
@@ -84,6 +95,12 @@ def main():
     if resp.status_code != 200:
         print(f"FAIL  Unexpected status code {resp.status_code}")
         print("Response body (first 500 chars):", resp.text[:500])
+        if resp.status_code == 502:
+            print(
+                "\nHINT: 502 from scrape.do usually means the target refused the connection.\n"
+                "      The request is now sent with Render=True + Super=True which should fix it.\n"
+                "      If it persists, check your scrape.do quota or try again in a few seconds."
+            )
         sys.exit(1)
 
     print("PASS  HTTP 200 received — 403 is bypassed!")

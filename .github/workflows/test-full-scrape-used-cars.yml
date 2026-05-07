@@ -48,9 +48,9 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
+        # Only need the scraping libs — no pandas/openpyxl since output is JSON
         run: |
-          pip install -r requirements.txt
-          pip install -r "Used Car/requirements.txt"
+          pip install requests beautifulsoup4 aiohttp python-dateutil curl_cffi lxml
 
       - name: Run full Used-Cars scrape test
         env:

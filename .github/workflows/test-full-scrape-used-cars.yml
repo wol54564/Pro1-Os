@@ -1,0 +1,64 @@
+name: Test Full Used-Cars Scrape (scrape.do)
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_makes:
+        description: 'Max car makes to scrape (0 = all)'
+        required: false
+        default: '3'
+      max_models:
+        description: 'Max models per make (0 = all)'
+        required: false
+        default: '2'
+      max_pages:
+        description: 'Max listing pages per model'
+        required: false
+        default: '2'
+      max_details:
+        description: 'Max detail-page fetches per model (0 = skip details)'
+        required: false
+        default: '3'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  used-cars-scrape-test:
+    name: Full Used-Cars scrape via scrape.do
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r "Used Car/requirements.txt"
+
+      - name: Run full Used-Cars scrape test
+        env:
+          # SCRAPEDO_TOKEN2 secret mapped to SCRAPEDO_TOKEN so create_session() picks it up
+          SCRAPEDO_TOKEN: ${{ secrets.SCRAPEDO_TOKEN2 }}
+        run: |
+          cd "Used Car"
+          python test_full_scrape_used_cars.py \
+            --max-makes   ${{ github.event.inputs.max_makes   || '3' }} \
+            --max-models  ${{ github.event.inputs.max_models  || '2' }} \
+            --max-pages   ${{ github.event.inputs.max_pages   || '2' }} \
+            --max-details ${{ github.event.inputs.max_details || '3' }} \
+            --output used_cars_test_output.json
+
+      - name: Upload scrape output as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: used-cars-scrape-output-${{ github.run_number }}
+          path: "Used Car/used_cars_test_output.json"
+          retention-days: 7

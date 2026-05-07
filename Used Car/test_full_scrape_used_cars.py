@@ -150,6 +150,9 @@ async def scrape_all(scraper, max_makes: int, max_models: int,
                                 lslug, listing.get("status")
                             )
                             if details:
+                                # Strip image URLs — not needed in output
+                                details.pop("images", None)
+                                details.pop("user_image", None)
                                 listing["_details"] = details
                                 details_fetched += 1
                                 logger.info(f"      Detail OK: {lslug}")
@@ -332,20 +335,20 @@ def main():
         help="scrape.do API token (or set SCRAPEDO_TOKEN env var)",
     )
     parser.add_argument(
-        "--max-makes", type=int, default=3,
-        help="Max number of car makes to scrape (default: 3, 0 = all)",
+        "--max-makes", type=int, default=0,
+        help="Max number of car makes to scrape (default: 0 = all)",
     )
     parser.add_argument(
-        "--max-models", type=int, default=2,
-        help="Max models per make (default: 2, 0 = all)",
+        "--max-models", type=int, default=0,
+        help="Max models per make (default: 0 = all)",
     )
     parser.add_argument(
-        "--max-pages", type=int, default=2,
-        help="Max listing pages per model (default: 2)",
+        "--max-pages", type=int, default=999,
+        help="Max listing pages per model (default: 999, capped by totalPages from API)",
     )
     parser.add_argument(
-        "--max-details", type=int, default=3,
-        help="Max detail-page fetches per model (default: 3, 0 = skip)",
+        "--max-details", type=int, default=999,
+        help="Max detail-page fetches per model (default: 999 = all). Images are excluded from output.",
     )
     parser.add_argument(
         "--output", default="used_cars_test_output.json",

@@ -4,21 +4,31 @@ on:
   workflow_dispatch:
     inputs:
       max_makes:
-        description: 'Max car makes to scrape (0 = all)'
+        description: |
+          Number of car brands to scrape. 0 = ALL brands.
+          Leave as 0 for a full production run.
         required: false
-        default: '3'
+        default: '0'
       max_models:
-        description: 'Max models per make (0 = all)'
+        description: |
+          Number of models per brand. 0 = ALL models.
+          Leave as 0 for a full production run.
         required: false
-        default: '2'
+        default: '0'
       max_pages:
-        description: 'Max listing pages per model'
+        description: |
+          Max listing pages per model. The scraper already stops automatically
+          at the last page (totalPages from the API), so 999 means "fetch all".
         required: false
-        default: '2'
+        default: '999'
       max_details:
-        description: 'Max detail-page fetches per model (0 = skip details)'
+        description: |
+          Number of individual detail pages to open per model.
+          Fetches extra fields: year, mileage, color, gear type, fuel type, full description.
+          Image URLs are excluded from the output.
+          Set to 0 to skip detail pages entirely.
         required: false
-        default: '3'
+        default: '999'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

@@ -1,9 +1,6 @@
 name: Animals Scraper — DataImpulse Residential Proxy (Kuwait)
 
 on:
-  schedule:
-    # Run daily at 01:00 UTC
-    - cron: '0 1 * * *'
   workflow_dispatch:
     inputs:
       max_pages:

@@ -4,11 +4,11 @@ Animals scraper — DataImpulse residential proxies, Kuwait, YESTERDAY data only
 What this does:
   1.  Fetches all Animals subcategories from q84sale.com/ar/animals
   2.  For each subcategory checks for child categories
-  3.  Paginates through listing pages keeping ONLY yesterday's listings
-      (stops pagination as soon as a page returns nothing from yesterday)
-  4.  Fetches the detail page for EVERY listing found — no skipping, no cap
-  5.  Saves the full result to a local JSON file (no S3 needed)
-  6.  Prints a final report with the TOTAL NUMBER OF HTTP REQUESTS made
+  3.  Reads totalPages from the first listing page of each (sub)category
+  4.  Iterates through ALL pages (1 → totalPages), keeping only yesterday's listings
+  5.  Fetches the detail page for EVERY listing found — no skipping, no cap
+  6.  Saves the full result to a local JSON file (no S3 needed)
+  7.  Prints a final report with the TOTAL NUMBER OF HTTP REQUESTS made
 
 Proxy:  DataImpulse residential  (gw.dataimpulse.com:823)
 Geo:    Kuwait  (__cr.kw appended to the username)
@@ -16,14 +16,10 @@ Filter: Yesterday's date only — today's or older listings are skipped
 
 Usage:
     python test_dataimpulse_yesterday.py
-    python test_dataimpulse_yesterday.py --max-pages 10
     python test_dataimpulse_yesterday.py --output my_output.json
 
 CLI arguments:
-    --max-pages    Safety cap on listing pages per subcategory
-                   (0 = unlimited, default: 10)
-    --output       Output JSON file path
-                   (default: animals_yesterday_result.json)
+    --output   Output JSON file path  (default: animals_yesterday_result.json)
 
 Environment variables (override proxy defaults):
     DATAIMPULSE_USER   (default: 2ced8727319e5746c47f__cr.kw)
@@ -194,11 +190,10 @@ async def fetch_all_details(scraper, listings: list) -> list:
     return listings
 
 
-async def scrape_all(scraper, max_pages: int) -> list:
+async def scrape_all(scraper) -> list:
     """
     Scrape all Animals subcategories — YESTERDAY only, ALL detail pages.
-
-    max_pages == 0  → paginate until the page returns no yesterday listings.
+    Pagination is driven entirely by totalPages returned in the site JSON.
     """
     results = []
 
@@ -242,15 +237,11 @@ async def scrape_all(scraper, max_pages: int) -> list:
                 for child in children:
                     child_slug = child["slug"]
                     child_name = child.get("name_en") or child.get("name_ar") or child_slug
-                    logger.info(f"  → Child: {child_name}  ({child_slug})")
 
-                    page = 1
-                    while True:
-                        if max_pages > 0 and page > max_pages:
-                            logger.info(f"    Reached max_pages={max_pages}, stopping")
-                            break
+                    total_pages = await scraper.get_total_pages(slug, child_slug=child_slug)
+                    logger.info(f"  → Child: {child_name}  ({child_slug})  — {total_pages} page(s)")
 
-                        # filter_yesterday=True — only yesterday's listings come back
+                    for page in range(1, total_pages + 1):
                         listings = await scraper.get_listings(
                             slug,
                             page_num=page,
@@ -259,11 +250,12 @@ async def scrape_all(scraper, max_pages: int) -> list:
                         )
 
                         if not listings:
-                            logger.info(f"    Page {page}: no yesterday listings — stopping")
-                            break
+                            logger.info(f"    Page {page}/{total_pages}: no yesterday listings")
+                            await asyncio.sleep(0.5)
+                            continue
 
                         logger.info(
-                            f"    Page {page}: {len(listings)} yesterday listing(s)"
+                            f"    Page {page}/{total_pages}: {len(listings)} yesterday listing(s)"
                             f" — fetching ALL detail pages..."
                         )
 
@@ -273,19 +265,15 @@ async def scrape_all(scraper, max_pages: int) -> list:
                         entry["detail_fetches"] += len(
                             [l for l in listings if "_details" in l]
                         )
-
-                        page += 1
                         await asyncio.sleep(0.5)
 
             else:
                 logger.info("  No child categories — scraping main pages")
 
-                page = 1
-                while True:
-                    if max_pages > 0 and page > max_pages:
-                        logger.info(f"  Reached max_pages={max_pages}, stopping")
-                        break
+                total_pages = await scraper.get_total_pages(slug)
+                logger.info(f"  totalPages = {total_pages}")
 
+                for page in range(1, total_pages + 1):
                     listings = await scraper.get_listings(
                         slug,
                         page_num=page,
@@ -293,11 +281,12 @@ async def scrape_all(scraper, max_pages: int) -> list:
                     )
 
                     if not listings:
-                        logger.info(f"  Page {page}: no yesterday listings — stopping")
-                        break
+                        logger.info(f"  Page {page}/{total_pages}: no yesterday listings")
+                        await asyncio.sleep(0.5)
+                        continue
 
                     logger.info(
-                        f"  Page {page}: {len(listings)} yesterday listing(s)"
+                        f"  Page {page}/{total_pages}: {len(listings)} yesterday listing(s)"
                         f" — fetching ALL detail pages..."
                     )
 
@@ -307,8 +296,6 @@ async def scrape_all(scraper, max_pages: int) -> list:
                     entry["detail_fetches"] += len(
                         [l for l in listings if "_details" in l]
                     )
-
-                    page += 1
                     await asyncio.sleep(0.5)
 
         except Exception as exc:
@@ -342,7 +329,7 @@ async def run(args):
     logger.info("=" * 60)
     logger.info(f"Proxy       : {host}:{port}  (Kuwait residential)")
     logger.info(f"Target date : {YESTERDAY}  (yesterday)")
-    logger.info(f"Max pages   : {'unlimited' if args.max_pages == 0 else args.max_pages}  per subcategory")
+    logger.info(f"Pagination  : driven by totalPages from site JSON")
     logger.info(f"Details     : ALL — every listing's detail page is fetched")
     logger.info(f"Output      : {args.output}")
     logger.info("=" * 60)
@@ -358,7 +345,7 @@ async def run(args):
 
     start_time = time.time()
     try:
-        results = await scrape_all(scraper, args.max_pages)
+        results = await scrape_all(scraper)
     finally:
         await scraper.close_browser()
 
@@ -376,7 +363,7 @@ async def run(args):
         "proxy":       f"{host}:{port} (Kuwait residential — DataImpulse)",
         "target_date": YESTERDAY,
         "config": {
-            "max_pages":   args.max_pages,
+            "pagination":  "all pages via totalPages",
             "date_filter": f"yesterday ({YESTERDAY}) only",
             "details":     "all — no cap, no skip",
         },
@@ -459,14 +446,9 @@ def main():
         description=(
             "Scrape Animals listings from q84sale.com posted YESTERDAY via "
             "DataImpulse residential proxies (Kuwait). "
+            "Pagination is driven by totalPages from the site JSON. "
             "Detail pages are always fetched for every listing found."
         )
-    )
-    parser.add_argument(
-        "--max-pages",
-        type=int,
-        default=10,
-        help="Safety cap on listing pages per subcategory (0 = unlimited, default: 10)",
     )
     parser.add_argument(
         "--output",

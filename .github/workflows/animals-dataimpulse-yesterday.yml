@@ -3,10 +3,6 @@ name: Animals Scraper — DataImpulse Proxy, Yesterday Data (Kuwait)
 on:
   workflow_dispatch:
     inputs:
-      max_pages:
-        description: 'Max listing pages per subcategory (0 = unlimited)'
-        required: false
-        default: '10'
       output_file:
         description: 'Output JSON filename'
         required: false
@@ -46,7 +42,6 @@ jobs:
         run: |
           cd Animals
           python test_dataimpulse_yesterday.py \
-            --max-pages ${{ github.event.inputs.max_pages || '10' }} \
             --output "${{ github.event.inputs.output_file || 'animals_yesterday_result.json' }}"
 
       - name: Upload scrape output as artifact

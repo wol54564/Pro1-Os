@@ -101,6 +101,32 @@ class AnimalsJsonScraper:
             logger.error(f"Error getting subcategories: {e}")
             return []
     
+    async def get_total_pages(self, subcategory_slug: str,
+                              child_slug: Optional[str] = None) -> int:
+        """
+        Return the totalPages value from the first listing page of a (sub)category.
+        Returns 1 if the key is missing or the page cannot be fetched.
+        """
+        try:
+            if child_slug:
+                url = f"{self.base_url}/{subcategory_slug}/{child_slug}/1"
+            else:
+                url = f"{self.base_url}/{subcategory_slug}/1"
+
+            json_data = await self.get_page_json_data(url)
+            if not json_data:
+                return 1
+
+            total = (
+                json_data.get("props", {})
+                .get("pageProps", {})
+                .get("totalPages", 1)
+            )
+            return int(total) if total else 1
+        except Exception as e:
+            logger.error(f"Error getting totalPages for {subcategory_slug}: {e}")
+            return 1
+
     async def get_catchilds(self, subcategory_slug: str) -> List[Dict]:
         """
         Get child subcategories (catChilds) from a listings page

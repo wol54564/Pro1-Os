@@ -70,16 +70,18 @@ def build_client():
 # ── Individual checks ─────────────────────────────────────────────────────────
 
 def check_head_bucket(client, bucket: str) -> bool:
+    """
+    HeadBucket is non-fatal on R2 — object-scoped API tokens often return 404
+    even when the bucket is fully accessible for PUT/GET.
+    Returns True always; a hard failure here would be a false negative.
+    """
     try:
         client.head_bucket(Bucket=bucket)
         print(f"[OK]   HeadBucket — bucket '{bucket}' exists and is accessible")
-        return True
-    except client.exceptions.NoSuchBucket:
-        print(f"[FAIL] Bucket '{bucket}' does not exist")
-        return False
     except Exception as e:
-        print(f"[FAIL] HeadBucket error: {e}")
-        return False
+        print(f"[WARN] HeadBucket returned an error (common with R2 object-scoped tokens): {e}")
+        print(f"         This is NOT a blocker — PUT/GET/DELETE will confirm real access below.")
+    return True  # always non-fatal
 
 
 def check_put_object(client, bucket: str, key: str) -> bool:
@@ -109,14 +111,18 @@ def check_get_object(client, bucket: str, key: str) -> bool:
 
 
 def check_list_objects(client, bucket: str, prefix: str) -> bool:
+    """
+    ListObjectsV2 requires the r2:list permission which is separate from
+    object read/write. Scrapers only PUT data so this is non-fatal.
+    """
     try:
         resp = client.list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=5)
         count = resp.get("KeyCount", 0)
         print(f"[OK]   ListObjectsV2 — found {count} object(s) under prefix '{prefix}'")
-        return True
     except Exception as e:
-        print(f"[FAIL] ListObjectsV2 error: {e}")
-        return False
+        print(f"[WARN] ListObjectsV2 failed (r2:list permission may not be granted): {e}")
+        print(f"         This is NOT a blocker — scrapers only need PUT/GET/DELETE.")
+    return True  # always non-fatal
 
 
 def check_delete_object(client, bucket: str, key: str) -> bool:

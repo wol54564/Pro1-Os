@@ -1,4 +1,4 @@
-name: "Batch B — Electronics / Education / Jobs / Fashion-and-Family / Services / Contracting / Rest-Automotive-Part2"
+name: "Batch B — Electronics / Education / Used Car / Fashion-and-Family / Services / Contracting / Rest-Automotive-Part2"
 
 # Batch B is triggered automatically when Batch A completes successfully.
 # Account 2 geo rotates with a +1 offset vs Account 1:
@@ -9,7 +9,7 @@ name: "Batch B — Electronics / Education / Jobs / Fashion-and-Family / Service
 on:
   workflow_run:
     workflows:
-      - "Batch A — Animals / Bikes / Camping / Furniture / Others / Commercials / Dalil"
+      - "Batch A — Animals / Bikes / Camping / Property / New Car / Rest-Automotive-Part1 / Jobs"
     types:
       - completed
   workflow_dispatch:
@@ -69,9 +69,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r CFl_data/requirements.txt
 
-      - name: Random gap after Batch A (45–90 min stealth pause)
+      - name: Random gap after Batch A (25–45 min stealth pause)
         run: |
-          DELAY=$((RANDOM % 2700 + 2700))
+          DELAY=$((RANDOM % 1200 + 1500))
           echo "Waiting ${DELAY}s (~$(( DELAY / 60 )) min) before starting Batch B..."
           sleep $DELAY
 
@@ -81,8 +81,8 @@ jobs:
       - name: "[2/7] Education"
         run: cd CFl_data/Education && python main.py
 
-      - name: "[3/7] Jobs"
-        run: cd CFl_data/Jobs && python main.py
+      - name: "[3/7] Used Car"
+        run: cd "CFl_data/Used Car" && python main.py
 
       - name: "[4/7] Fashion-and-Family"
         run: cd "CFl_data/Fashion-and-Family" && python main.py

@@ -1,4 +1,4 @@
-name: "Batch A — Animals / Bikes / Camping / Furniture / Others / Commercials / Dalil"
+name: "Batch A — Animals / Bikes / Camping / Property / New Car / Rest-Automotive-Part1 / Jobs"
 
 # Batch A is the entry point — it runs on schedule and triggers Batch B on success.
 # Account 1 geo rotates daily:
@@ -81,17 +81,17 @@ jobs:
       - name: "[3/7] Camping"
         run: cd CFl_data/Camping && python main.py
 
-      - name: "[4/7] Furniture"
-        run: cd CFl_data/Furniture && python main.py
+      - name: "[4/7] Property"
+        run: cd CFl_data/Property && python main.py
 
-      - name: "[5/7] Others"
-        run: cd CFl_data/Others && python main.py
+      - name: "[5/7] New Car"
+        run: cd "CFl_data/New Car" && python main.py
 
-      - name: "[6/7] Commercials"
-        run: cd CFl_data/Commercials && python main.py
+      - name: "[6/7] Rest-Automotive-Part1"
+        run: cd CFl_data/Rest-Automotive-Part1 && python main.py
 
-      - name: "[7/7] Dalil"
-        run: cd CFl_data/Dalil && python main.py
+      - name: "[7/7] Jobs"
+        run: cd CFl_data/Jobs && python main.py
 
       - name: Batch A summary
         if: always()

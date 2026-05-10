@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import pandas as pd
 import boto3
 import io
@@ -138,7 +138,7 @@ class MainScraper:
                     logger.error(f"Error processing type {type_name}: {e}")
                     continue
 
-            # If brand has any data → generate Excel and upload
+            # If brand has any data ? generate Excel and upload
             if all_car_details:
                 today = datetime.now()
 

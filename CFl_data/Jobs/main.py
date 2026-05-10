@@ -441,7 +441,7 @@ async def main():
     Main entry point - configure your S3 bucket name and AWS profile here
     """
     # Configure these values
-    BUCKET_NAME = os.environ.get("S3_BUCKET_NAME")
+    BUCKET_NAME = os.environ.get("CF_R2_BUCKET_NAME")
     
     orchestrator = JobsScraperOrchestrator(
         bucket_name=BUCKET_NAME,

@@ -415,7 +415,7 @@ async def main():
     orchestrator = None
     
     try:
-        bucket_name = os.environ.get("S3_BUCKET_NAME")
+        bucket_name = os.environ.get("CF_R2_BUCKET_NAME")
         profile_name = os.environ.get("AWS_PROFILE", None)
         max_pages = int(os.environ.get("MAX_PAGES", "5"))  # Max pages per category
         

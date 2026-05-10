@@ -398,7 +398,7 @@ class FashionFamilyScraperOrchestrator:
 async def main():
     """Entry point for the scraper"""
     # Configuration
-    BUCKET_NAME = os.environ.get("S3_BUCKET_NAME")
+    BUCKET_NAME = os.environ.get("CF_R2_BUCKET_NAME")
     
     orchestrator = FashionFamilyScraperOrchestrator(
         bucket_name=BUCKET_NAME,

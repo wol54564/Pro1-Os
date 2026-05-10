@@ -420,7 +420,7 @@ async def main():
     """Main entry point"""
     try:
         # Configuration
-        BUCKET_NAME = os.environ.get("S3_BUCKET_NAME")
+        BUCKET_NAME = os.environ.get("CF_R2_BUCKET_NAME")
         
         # Uncomment to limit listings per subcategory (useful for testing)
         # MAX_LISTINGS = 5

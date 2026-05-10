@@ -163,7 +163,7 @@ class S3Helper:
             s3_key = f"{partition}/images/{subcategory_slug}/{filename}"
             
             logger.info(f"Uploading image: {filename}")
-            logger.info(f"Full S3 path: s3://{self.bucket_name}/{s3_key}")
+            logger.info(f"Full R2 path: r2://{self.bucket_name}/{s3_key}")
             
             for attempt in range(3):
                 try:

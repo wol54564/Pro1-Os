@@ -1,0 +1,32 @@
+name: "Test — Cloudflare R2 Connection"
+
+# Run manually to verify R2 secrets are correctly configured.
+# Exit code 0 = all checks passed. Exit code 1 = failure (check logs).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-r2:
+    name: Test R2 Connection
+    runs-on: ubuntu-22.04
+    env:
+      CF_R2_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+      CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+      CF_R2_ENDPOINT_URL: ${{ secrets.CF_R2_ENDPOINT_URL }}
+      CF_R2_BUCKET_NAME: ${{ secrets.CF_R2_BUCKET_NAME }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install boto3 botocore
+
+      - name: Run R2 connection test
+        run: python CFl_data/test_r2_connection.py

@@ -1,16 +1,35 @@
 """
-Shared utilities for all scrapers to make requests appear more human-like
-Includes random delays, user-agent rotation, and request header randomization
+Shared utilities for all CFl_data scrapers.
+
+Proxy:   DataImpulse residential — geo-targeted via DATAIMPULSE_USER env var.
+         The workflow appends __cr.kw / __cr.sa / __cr.eg to the base username
+         according to the daily rotation defined in PROXY_ROTATION_SETUP.md.
+
+Env vars (set by GitHub Actions workflow):
+    DATAIMPULSE_USER   full username including __cr.XX suffix  (e.g. abc123__cr.kw)
+    DATAIMPULSE_PASS   proxy password
+    DATAIMPULSE_HOST   proxy host   (default: gw.dataimpulse.com)
+    DATAIMPULSE_PORT   proxy port   (default: 823)
+
+Anti-detection delays (from PROXY_ROTATION_SETUP.md):
+    Between pages         : random 1.5 – 3.5 s  (callers use random_delay())
+    Between subcategories : random 3.0 – 7.0 s  (callers use random_delay(3.0, 7.0))
+    Between detail pages  : 0.3 s minimum
 """
 
+import os
 import random
 import time
 import asyncio
+import logging
 from typing import Optional
 from curl_cffi import requests as curl_requests
 
+logger = logging.getLogger(__name__)
 
-# Pool of realistic user agents
+
+# ── User-agent / header pools ─────────────────────────────────────────────────
+
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
@@ -24,7 +43,6 @@ USER_AGENTS = [
     'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0',
 ]
 
-# Pool of common Accept-Language headers
 ACCEPT_LANGUAGES = [
     'en-US,en;q=0.9',
     'en-US,en;q=0.9,ar;q=0.8',
@@ -35,17 +53,10 @@ ACCEPT_LANGUAGES = [
 
 
 def get_random_user_agent() -> str:
-    """Return a random user agent from the pool"""
     return random.choice(USER_AGENTS)
 
 
 def get_random_headers() -> dict:
-    """
-    Generate randomized request headers to mimic real browser behavior
-    
-    Returns:
-        dict: Headers dictionary with randomized values
-    """
     return {
         'User-Agent': get_random_user_agent(),
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
@@ -61,65 +72,66 @@ def get_random_headers() -> dict:
     }
 
 
-def random_delay(min_seconds: float = 1.0, max_seconds: float = 3.0) -> None:
-    """
-    Add a random delay to mimic human behavior (synchronous)
-    
-    Args:
-        min_seconds: Minimum delay in seconds (default: 1.0)
-        max_seconds: Maximum delay in seconds (default: 3.0)
-    """
-    delay = random.uniform(min_seconds, max_seconds)
-    time.sleep(delay)
+def random_delay(min_seconds: float = 1.5, max_seconds: float = 3.5) -> None:
+    """Synchronous random delay. Defaults tuned for anti-detection (1.5–3.5 s)."""
+    time.sleep(random.uniform(min_seconds, max_seconds))
 
 
-async def async_random_delay(min_seconds: float = 1.0, max_seconds: float = 3.0) -> None:
-    """
-    Add a random delay to mimic human behavior (asynchronous)
-    
-    Args:
-        min_seconds: Minimum delay in seconds (default: 1.0)
-        max_seconds: Maximum delay in seconds (default: 3.0)
-    """
-    delay = random.uniform(min_seconds, max_seconds)
-    await asyncio.sleep(delay)
+async def async_random_delay(min_seconds: float = 1.5, max_seconds: float = 3.5) -> None:
+    """Asynchronous random delay. Defaults tuned for anti-detection (1.5–3.5 s)."""
+    await asyncio.sleep(random.uniform(min_seconds, max_seconds))
 
 
 def setup_session_with_random_headers(session) -> None:
-    """
-    Configure a requests.Session object with randomized headers
-    
-    Args:
-        session: requests.Session object to configure
-    """
     session.headers.update(get_random_headers())
 
 
 def rotate_user_agent(session) -> None:
-    """
-    Rotate the user agent in an existing session.
-    For curl_cffi/SmartSession this is a no-op — impersonation handles headers.
-    """
+    """No-op for SmartSession — curl_cffi impersonation handles headers."""
     if isinstance(session, SmartSession):
         return
     if not isinstance(session, curl_requests.Session):
         session.headers['User-Agent'] = get_random_user_agent()
 
 
-# Webshare Kuwait residential rotating proxy
-# Using Kuwait geo-targeted residential IPs to match the target site's region
-PROXIES = {
-    "http": "http://yicfjheyresidential-KW-1:u9agrcjm8k8x@p.webshare.io:80/",
-    "https": "http://yicfjheyresidential-KW-1:u9agrcjm8k8x@p.webshare.io:80/",
-}
+# ── DataImpulse proxy configuration ──────────────────────────────────────────
+
+def _build_proxies() -> dict:
+    """
+    Build proxy dict from environment variables.
+    DATAIMPULSE_USER must already include the __cr.XX geo suffix —
+    the workflow appends it before running the scraper.
+    Falls back to no proxy if env vars are not set (local dev without proxy).
+    """
+    user = os.environ.get("DATAIMPULSE_USER", "")
+    password = os.environ.get("DATAIMPULSE_PASS", "")
+    host = os.environ.get("DATAIMPULSE_HOST", "gw.dataimpulse.com")
+    port = os.environ.get("DATAIMPULSE_PORT", "823")
+
+    if not user or not password:
+        logger.warning(
+            "DATAIMPULSE_USER / DATAIMPULSE_PASS not set — running WITHOUT proxy. "
+            "Set these env vars or the scraper will use your real IP."
+        )
+        return {}
+
+    proxy_url = f"http://{user}:{password}@{host}:{port}"
+    logger.info(f"Proxy: {host}:{port}  user={user}")
+    return {"http": proxy_url, "https": proxy_url}
+
+
+# Built once at import time — consistent for the lifetime of the process
+PROXIES = _build_proxies()
 
 
 def configure_session_proxy(session) -> None:
-    """Configure a session to use the Kuwait residential proxy."""
-    session.proxies.update(PROXIES)
+    """Configure a plain requests.Session to use DataImpulse proxy."""
+    if PROXIES:
+        session.proxies.update(PROXIES)
 
 
-# Impersonation profiles to cycle through on retries
+# ── TLS impersonation profiles ────────────────────────────────────────────────
+
 _IMPERSONATION_PROFILES = [
     "chrome124",
     "chrome120",
@@ -129,12 +141,29 @@ _IMPERSONATION_PROFILES = [
 ]
 
 
+# ── SmartSession ──────────────────────────────────────────────────────────────
+
+class _CachedResponse:
+    """Zero-cost response object served from the in-memory URL cache."""
+
+    status_code = 200
+
+    def __init__(self, text: str):
+        self.text = text
+        self.content = text.encode("utf-8")
+
+    def raise_for_status(self):
+        pass
+
+
 class SmartSession:
     """
     Drop-in replacement for requests.Session that:
-    1. Uses curl_cffi to impersonate a real browser TLS fingerprint
-    2. Always routes through the Kuwait residential proxy (required for q84sale.com)
+    1. Routes all requests through DataImpulse residential proxy (geo from env var)
+    2. Uses curl_cffi to impersonate a real browser TLS fingerprint
     3. Auto-retries with rotating impersonation profiles on 403
+    4. Caches URL responses — duplicate fetches cost 0 extra requests
+    5. Tracks request_count and cache_hits for reporting
     """
 
     def __init__(self):
@@ -143,17 +172,30 @@ class SmartSession:
             impersonate=_IMPERSONATION_PROFILES[0],
             proxies=PROXIES,
         )
+        self._cache: dict = {}
+        self.request_count = 0
+        self.cache_hits = 0
 
-    def _next_profile(self):
+    def _next_profile(self) -> str:
         self._profile_index = (self._profile_index + 1) % len(_IMPERSONATION_PROFILES)
         return _IMPERSONATION_PROFILES[self._profile_index]
 
-    def get(self, url, **kwargs):
+    def get(self, url: str, **kwargs):
+        # Serve from cache at zero cost
+        if url in self._cache:
+            self.cache_hits += 1
+            logger.debug(f"Cache hit: {url}")
+            return _CachedResponse(self._cache[url])
+
         last_exc = None
         for attempt in range(len(_IMPERSONATION_PROFILES)):
             try:
                 if attempt > 0:
                     profile = self._next_profile()
+                    logger.warning(
+                        f"403 — retrying with '{profile}' "
+                        f"(attempt {attempt + 1}/{len(_IMPERSONATION_PROFILES)})"
+                    )
                     time.sleep(random.uniform(2.0, 4.0))
                     self._session = curl_requests.Session(
                         impersonate=profile,
@@ -163,9 +205,11 @@ class SmartSession:
                 response = self._session.get(url, **kwargs)
 
                 if response.status_code == 403:
-                    last_exc = Exception(f"HTTP Error 403: ")
+                    last_exc = Exception(f"HTTP 403 for {url}")
                     continue
 
+                self.request_count += 1
+                self._cache[url] = response.text
                 return response
 
             except Exception as e:
@@ -174,7 +218,9 @@ class SmartSession:
                     continue
                 raise
 
-        raise last_exc or Exception("All retry attempts failed with 403")
+        raise last_exc or Exception(
+            f"All {len(_IMPERSONATION_PROFILES)} retry attempts failed for {url}"
+        )
 
     def close(self):
         if self._session:
@@ -191,7 +237,15 @@ class SmartSession:
 
 def create_session() -> SmartSession:
     """
-    Create a SmartSession that impersonates Chrome's TLS fingerprint and
-    automatically retries with different profiles and proxy fallback on 403.
+    Return a SmartSession backed by DataImpulse residential proxy.
+    Geo is determined by DATAIMPULSE_USER env var (__cr.kw / __cr.sa / __cr.eg).
     """
+    geo = ""
+    user = os.environ.get("DATAIMPULSE_USER", "")
+    if "__cr." in user:
+        geo = user.split("__cr.")[-1]
+    logger.info(
+        f"SmartSession ready — DataImpulse proxy  geo={geo or 'not set'}  "
+        f"host={os.environ.get('DATAIMPULSE_HOST', 'gw.dataimpulse.com')}"
+    )
     return SmartSession()

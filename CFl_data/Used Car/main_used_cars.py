@@ -402,11 +402,11 @@ async def main():
     """
     Main entry point for the scraper
     """
-    BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
+    BUCKET_NAME = os.getenv("CF_R2_BUCKET_NAME")
     PROFILE_NAME = None  # Optional AWS profile name
     MAX_CATEGORIES = None  # None to scrape all categories, or set a number like 5
     
-    logger.info(f"Using S3 bucket: {BUCKET_NAME}")
+    logger.info(f"Using R2 bucket: {BUCKET_NAME}")
     
     # Initialize and run scraper
     orchestrator = UsedCarsScraperOrchestrator(

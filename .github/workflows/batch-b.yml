@@ -82,7 +82,7 @@ jobs:
         run: cd CFl_data/Education && python main.py
 
       - name: "[3/7] Used Car"
-        run: cd "CFl_data/Used Car" && python main.py
+        run: cd "CFl_data/Used Car" && python main_used_cars.py
 
       - name: "[4/7] Fashion-and-Family"
         run: cd "CFl_data/Fashion-and-Family" && python main.py

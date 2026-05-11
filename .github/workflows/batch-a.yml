@@ -1,10 +1,6 @@
-name: "Batch A — Animals / Bikes / Camping / Property / New Car / Rest-Automotive-Part1 / Jobs"
+name: "Batch A"
 
-# Batch A is the entry point — it runs on schedule and triggers Batch B on success.
-# Account 1 geo rotates daily:
-#   Mon/Wed/Fri → __cr.kw   (Kuwait)
-#   Tue/Thu/Sat → __cr.sa   (Saudi Arabia)
-#   Sun         → __cr.eg   (Egypt)
+
 
 on:
   schedule:

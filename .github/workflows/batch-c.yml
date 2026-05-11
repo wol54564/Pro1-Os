@@ -1,15 +1,10 @@
-name: "Batch C — Automotive-Cars-and-Trucks / Dalil / Others / Wanted-Cars / Furniture / Commercials / Rest-Automotive-Part3"
+name: "Batch C"
 
-# Batch C is triggered automatically when Batch B completes successfully.
-# Account 3 geo rotates with a +2 offset vs Account 1:
-#   Mon/Wed/Fri → __cr.eg   (Egypt)
-#   Tue/Thu/Sat → __cr.kw   (Kuwait)
-#   Sun         → __cr.sa   (Saudi Arabia)
 
 on:
   workflow_run:
     workflows:
-      - "Batch B — Electronics / Education / Used Car / Fashion-and-Family / Services / Contracting / Rest-Automotive-Part2"
+      - "Batch B — Others / Education / Used Car / Fashion-and-Family / Services / Contracting / Rest-Automotive-Part2"
     types:
       - completed
   workflow_dispatch:
@@ -81,8 +76,8 @@ jobs:
       - name: "[2/7] Dalil"
         run: cd CFl_data/Dalil && python main.py
 
-      - name: "[3/7] Others"
-        run: cd CFl_data/Others && python main.py
+      - name: "[3/7] Electronics"
+        run: cd CFl_data/Electronics && python main.py
 
       - name: "[4/7] Wanted-Cars"
         run: cd CFl_data/Wanted-Cars && python main.py

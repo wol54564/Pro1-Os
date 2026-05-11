@@ -1,10 +1,6 @@
-name: "Batch B — Electronics / Education / Used Car / Fashion-and-Family / Services / Contracting / Rest-Automotive-Part2"
+name: "Batch B"
 
-# Batch B is triggered automatically when Batch A completes successfully.
-# Account 2 geo rotates with a +1 offset vs Account 1:
-#   Mon/Wed/Fri → __cr.sa   (Saudi Arabia)
-#   Tue/Thu/Sat → __cr.eg   (Egypt)
-#   Sun         → __cr.kw   (Kuwait)
+
 
 on:
   workflow_run:
@@ -75,8 +71,8 @@ jobs:
           echo "Waiting ${DELAY}s (~$(( DELAY / 60 )) min) before starting Batch B..."
           sleep $DELAY
 
-      - name: "[1/7] Electronics"
-        run: cd CFl_data/Electronics && python main.py
+      - name: "[1/7] Others"
+        run: cd CFl_data/Others && python main.py
 
       - name: "[2/7] Education"
         run: cd CFl_data/Education && python main.py

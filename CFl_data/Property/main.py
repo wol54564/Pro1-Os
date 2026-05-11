@@ -40,7 +40,12 @@ async def get_property_subcategories():
         script = soup.find('script', {'id': '__NEXT_DATA__'})
         
         data = json.loads(script.string)
-        subcats = data["props"]["pageProps"]["propertySubcats"]
+        page_props = data["props"]["pageProps"]
+        subcats = (
+            page_props.get("verticalSubcats")
+            or page_props.get("propertySubcats")
+            or []
+        )
         logger.info(f"Found {len(subcats)} property subcategories")
         return subcats
     except Exception as e:

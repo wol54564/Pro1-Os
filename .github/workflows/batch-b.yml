@@ -5,7 +5,7 @@ name: "Batch B"
 on:
   workflow_run:
     workflows:
-      - "Batch A — Animals / Bikes / Camping / Property / New Car / Rest-Automotive-Part1 / Jobs"
+      - "Batch A"
     types:
       - completed
   workflow_dispatch:

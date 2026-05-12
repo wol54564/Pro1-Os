@@ -31,8 +31,11 @@ ENDPOINT_URL = os.environ.get("CF_R2_ENDPOINT_URL", "")
 BUCKET_NAME  = os.environ.get("CF_R2_BUCKET_NAME")
 DRY_RUN      = os.environ.get("DRY_RUN", "0") == "1"
 
-WRONG_PREFIX  = "data-collection-dl/4sale-data/"   # source (duplicated bucket)
-CORRECT_PREFIX = "4sale-data/"                      # destination
+# Each tuple: (wrong_prefix, correct_prefix)
+MIGRATIONS = [
+    ("data-collection-dl/4sale-data/",  "4sale-data/"),   # bucket name duplicated
+    ("your-bucket-name/4sale-data/",    "4sale-data/"),   # literal placeholder leaked
+]
 
 # ── Build client ──────────────────────────────────────────────────────────────
 
@@ -74,54 +77,55 @@ def main():
     mode = "DRY-RUN" if DRY_RUN else "LIVE"
     print(f"=== fix_double_bucket_paths.py  [{mode}] ===")
     print(f"Bucket : {BUCKET_NAME}")
-    print(f"Source : {WRONG_PREFIX}")
-    print(f"Dest   : {CORRECT_PREFIX}")
     print()
 
     client = build_client()
 
-    keys = list_objects(client, WRONG_PREFIX)
-    if not keys:
-        print("No objects found under the wrong prefix. Nothing to do.")
-        return
+    total_copied = 0
+    total_deleted = 0
+    total_errors = 0
 
-    print(f"Found {len(keys)} object(s) to move.\n")
+    for wrong_prefix, correct_prefix in MIGRATIONS:
+        print(f"--- Source : {wrong_prefix}")
+        print(f"    Dest   : {correct_prefix}")
 
-    copied  = 0
-    deleted = 0
-    errors  = 0
+        keys = list_objects(client, wrong_prefix)
+        if not keys:
+            print("    No objects found. Skipping.\n")
+            continue
 
-    for key in keys:
-        new_key = CORRECT_PREFIX + key[len(WRONG_PREFIX):]
-        print(f"  COPY  {key}")
-        print(f"     -> {new_key}")
+        print(f"    Found {len(keys)} object(s).\n")
 
-        if not DRY_RUN:
-            try:
-                # Copy to correct path
-                client.copy_object(
-                    Bucket=BUCKET_NAME,
-                    CopySource={"Bucket": BUCKET_NAME, "Key": key},
-                    Key=new_key,
-                )
-                copied += 1
+        for key in keys:
+            new_key = correct_prefix + key[len(wrong_prefix):]
+            print(f"  COPY  {key}")
+            print(f"     -> {new_key}")
 
-                # Delete old path
-                client.delete_object(Bucket=BUCKET_NAME, Key=key)
-                deleted += 1
-                print(f"     OK")
-            except Exception as e:
-                errors += 1
-                print(f"     ERROR: {e}")
-        else:
-            copied += 1
+            if not DRY_RUN:
+                try:
+                    client.copy_object(
+                        Bucket=BUCKET_NAME,
+                        CopySource={"Bucket": BUCKET_NAME, "Key": key},
+                        Key=new_key,
+                    )
+                    total_copied += 1
 
-    print()
+                    client.delete_object(Bucket=BUCKET_NAME, Key=key)
+                    total_deleted += 1
+                    print(f"     OK")
+                except Exception as e:
+                    total_errors += 1
+                    print(f"     ERROR: {e}")
+            else:
+                total_copied += 1
+
+        print()
+
     if DRY_RUN:
-        print(f"Dry-run complete. Would move {copied} object(s).")
+        print(f"Dry-run complete. Would move {total_copied} object(s).")
     else:
-        print(f"Done. Copied={copied}  Deleted={deleted}  Errors={errors}")
-        if errors:
+        print(f"Done. Copied={total_copied}  Deleted={total_deleted}  Errors={total_errors}")
+        if total_errors:
             sys.exit(1)
 
 

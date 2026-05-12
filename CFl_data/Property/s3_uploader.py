@@ -15,7 +15,7 @@ class S3Uploader:
         self.bucket_name = bucket_name
         self.s3 = boto3.client(
             "s3",
-            endpoint_url=cf_r2_endpoint,
+            endpoint_url=cf_r2_endpoint.rstrip("/").removesuffix("/" + bucket_name) if cf_r2_endpoint else cf_r2_endpoint,
             aws_access_key_id=cf_r2_access_key,
             aws_secret_access_key=cf_r2_secret_key,
             region_name='auto'

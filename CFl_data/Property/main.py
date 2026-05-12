@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 YESTERDAY = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 YEAR, MONTH, DAY = datetime.now().year, datetime.now().month, datetime.now().day
 
-AWS_BUCKET = "data-collection-dl"
+AWS_BUCKET = os.environ.get("CF_R2_BUCKET_NAME", "data-collection-dl")
 s3 = S3Uploader(AWS_BUCKET)
 
 BASE_URL = "https://www.q84sale.com/ar/property"

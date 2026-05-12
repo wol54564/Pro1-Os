@@ -42,10 +42,18 @@ class ServicesJsonScraper:
         """
         try:
             logger.info(f"Fetching {url}...")
-            random_delay(1.0, 3.0)  # Random delay before request
-            rotate_user_agent(self.session)  # Rotate user agent
-            response = self.session.get(url, timeout=30)
-            response.raise_for_status()
+            for attempt in range(1, 4):  # up to 3 attempts
+                try:
+                    random_delay(1.0, 3.0)  # Random delay before request
+                    rotate_user_agent(self.session)  # Rotate user agent
+                    response = self.session.get(url, timeout=60)
+                    response.raise_for_status()
+                    break
+                except Exception as req_err:
+                    logger.warning(f"Attempt {attempt}/3 failed for {url}: {req_err}")
+                    if attempt == 3:
+                        raise
+                    random_delay(3.0, 7.0)  # back-off before retry
             
             soup = BeautifulSoup(response.content, 'html.parser')
             

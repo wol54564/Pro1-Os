@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import pandas as pd
 from datetime import datetime, timedelta
 import json
@@ -6,7 +6,7 @@ import logging
 import requests
 from bs4 import BeautifulSoup
 from details_scraping import PropertyDetailsScraper
-from s3_uploader import S3Uploader
+from R2_uploader import R2Uploader
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,7 +23,7 @@ YESTERDAY = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 YEAR, MONTH, DAY = datetime.now().year, datetime.now().month, datetime.now().day
 
 AWS_BUCKET = os.environ.get("CF_R2_BUCKET_NAME", "data-collection-dl")
-s3 = S3Uploader(AWS_BUCKET)
+R2 = R2Uploader(AWS_BUCKET)
 
 BASE_URL = "https://www.q84sale.com/ar/property"
 SESSION = create_session()
@@ -133,7 +133,7 @@ async def scrape_subcategory(subcat):
                 ]
 
                 for l in listings:
-                    s3_paths = []
+                    R2_paths = []
                     for idx, img in enumerate(l.get("images", [])):
                         img_url = img if isinstance(img, str) else img.get("url", "")
                         if img_url:
@@ -141,10 +141,10 @@ async def scrape_subcategory(subcat):
                                 f"4sale-data/property/year={YEAR}/month={MONTH}/day={DAY}/"
                                 f"images/{slug}/{sub_slug}/{l['id']}_{idx}.jpg"
                             )
-                            result = await s3.upload_image(img_url, path)
+                            result = await R2.upload_image(img_url, path)
                             if result:
-                                s3_paths.append(path)
-                    l["s3_images_paths"] = s3_paths
+                                R2_paths.append(path)
+                    l["r2_images_paths"] = R2_paths
 
                 results.extend(listings)
 
@@ -185,7 +185,7 @@ async def scrape_subcategory(subcat):
                     record = data[0]
                     record["sheet"] = biz_name
 
-                    s3_paths = []
+                    R2_paths = []
                     for idx, img in enumerate(record.get("images", [])):
                         img_url = img if isinstance(img, str) else img.get("url", "")
                         if img_url:
@@ -193,11 +193,11 @@ async def scrape_subcategory(subcat):
                                 f"4sale-data/property/year={YEAR}/month={MONTH}/day={DAY}/"
                                 f"images/{slug}/{biz_slug}/{record['id']}_{idx}.jpg"
                             )
-                            result = await s3.upload_image(img_url, path)
+                            result = await R2.upload_image(img_url, path)
                             if result:
-                                s3_paths.append(path)
+                                R2_paths.append(path)
 
-                    record["s3_images_paths"] = s3_paths
+                    record["r2_images_paths"] = R2_paths
                     results.append(record)
 
                 page_no += 1
@@ -220,7 +220,7 @@ async def scrape_subcategory(subcat):
             ]
 
             for l in listings:
-                s3_paths = []
+                R2_paths = []
                 for idx, img in enumerate(l.get("images", [])):
                     img_url = img if isinstance(img, str) else img.get("url", "")
                     if img_url:
@@ -228,10 +228,10 @@ async def scrape_subcategory(subcat):
                             f"4sale-data/property/year={YEAR}/month={MONTH}/day={DAY}/"
                             f"images/{slug}/all/{l['id']}_{idx}.jpg"
                         )
-                        result = await s3.upload_image(img_url, path)
+                        result = await R2.upload_image(img_url, path)
                         if result:
-                            s3_paths.append(path)
-                l["s3_images_paths"] = s3_paths
+                            R2_paths.append(path)
+                l["r2_images_paths"] = R2_paths
 
             results.extend(listings)
 
@@ -253,9 +253,9 @@ async def scrape_subcategory(subcat):
             )
 
     with open(temp_file, "rb") as f:
-        await s3.upload_fileobj(f, excel_path)
+        await R2.upload_fileobj(f, excel_path)
 
-    logger.info(f"✓ {slug} saved to S3 with {len(set(r['sheet'] for r in results))} sheets")
+    logger.info(f"✓ {slug} saved to R2 with {len(set(r['sheet'] for r in results))} sheets")
 
 
 async def main():

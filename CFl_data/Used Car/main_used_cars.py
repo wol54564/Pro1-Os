@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import pandas as pd
 import json
 import logging
@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional
 from json_scraper_used_cars import UsedCarsJsonScraper
-from s3_helper import S3Helper
+from R2_helper import R2Helper
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 class UsedCarsScraperOrchestrator:
     """
-    Orchestrates the scraping of used-cars data with AWS S3 integration
+    Orchestrates the scraping of used-cars data with AWS R2 integration
     Creates Excel files organized by:
     - Main categories (files): Toyota.xlsx, Lexus.xlsx, etc.
     - Subcategories (sheets): Land Cruiser, Camry, etc. within each file
@@ -27,29 +27,29 @@ class UsedCarsScraperOrchestrator:
     
     def __init__(self, bucket_name: str, profile_name: Optional[str] = None, temp_dir: str = "temp_data"):
         self.scraper = None
-        self.s3_helper = None
+        self.R2_helper = None
         self.bucket_name = bucket_name
         self.profile_name = profile_name
         self.temp_dir = Path(temp_dir)
         self.temp_dir.mkdir(exist_ok=True)
         self.scrape_date = datetime.now() - timedelta(days=1)  # Yesterday's data for scraping
-        self.save_date = datetime.now()  # Today's date for S3 folder partitioning
+        self.save_date = datetime.now()  # Today's date for R2 folder partitioning
         logger.info(f"Scraping data for date: {self.scrape_date.strftime('%Y-%m-%d')}")
-        logger.info(f"Saving to S3 with date: {self.save_date.strftime('%Y-%m-%d')}")
+        logger.info(f"Saving to R2 with date: {self.save_date.strftime('%Y-%m-%d')}")
         logger.info("Mode: Scrape ALL available pages (no limit)")
         
     async def initialize(self):
-        """Initialize the scraper and S3 client"""
+        """Initialize the scraper and R2 client"""
         self.scraper = UsedCarsJsonScraper()
         # No browser initialization needed with BeautifulSoup
         
         try:
-            self.s3_helper = S3Helper(
+            self.R2_helper = R2Helper(
                 bucket_name=self.bucket_name,
                 profile_name=self.profile_name
             )
         except Exception as e:
-            logger.error(f"Failed to initialize S3: {e}")
+            logger.error(f"Failed to initialize R2: {e}")
             raise
         
     async def cleanup(self):
@@ -76,7 +76,7 @@ class UsedCarsScraperOrchestrator:
             subcategory_slug: Subcategory slug for organizing images
         
         Returns:
-            List of detailed listing information with S3 image URLs
+            List of detailed listing information with R2 image URLs
         """
         detailed_listings = []
         
@@ -100,14 +100,14 @@ class UsedCarsScraperOrchestrator:
                     
                     if images:
                         logger.info(f"Processing {len(images)} images for {slug} (ID: {listing_id})...")
-                        s3_image_urls = []
+                        R2_image_urls = []
                         
                         for img_index, image_url in enumerate(images):
                             try:
                                 image_data = await self.scraper.download_image(image_url)
                                 if image_data:
-                                    s3_path = await asyncio.to_thread(
-                                        self.s3_helper.upload_image,
+                                    R2_path = await asyncio.to_thread(
+                                        self.R2_helper.upload_image,
                                         image_url,
                                         image_data,
                                         f"{main_category_slug}/{subcategory_slug}",
@@ -115,9 +115,9 @@ class UsedCarsScraperOrchestrator:
                                         listing_id,
                                         img_index
                                     )
-                                    if s3_path:
-                                        s3_url = self.s3_helper.generate_s3_url(s3_path)
-                                        s3_image_urls.append(s3_url)
+                                    if R2_path:
+                                        R2_url = self.R2_helper.generate_R2_url(R2_path)
+                                        R2_image_urls.append(R2_url)
                                         logger.info(f"  Image {img_index}: {listing_id}_{img_index}.jpg ✓")
                                 
                                 await asyncio.sleep(0.1)
@@ -125,9 +125,9 @@ class UsedCarsScraperOrchestrator:
                                 logger.warning(f"Failed to download/upload image {image_url}: {e}")
                                 continue
                         
-                        # Add S3 image URLs to details
-                        details["s3_images"] = s3_image_urls
-                        logger.info(f"Successfully uploaded {len(s3_image_urls)} images")
+                        # Add R2 image URLs to details
+                        details["r2_images"] = R2_image_urls
+                        logger.info(f"Successfully uploaded {len(R2_image_urls)} images")
                     
                     detailed_listings.append(details)
                     logger.debug(f"✓ Retrieved details for {slug}")
@@ -193,12 +193,12 @@ class UsedCarsScraperOrchestrator:
         """
         formatted = []
         for listing in listings:
-            # Convert s3_images list to pipe-separated string
-            s3_images = listing.get("s3_images", [])
-            if isinstance(s3_images, list):
-                s3_images_str = " | ".join(s3_images)
+            # Convert R2_images list to pipe-separated string
+            R2_images = listing.get("r2_images", [])
+            if isinstance(R2_images, list):
+                R2_images_str = " | ".join(R2_images)
             else:
-                s3_images_str = s3_images if s3_images else ""
+                R2_images_str = R2_images if R2_images else ""
             
             formatted.append({
                 "Listing ID": listing.get("id"),
@@ -216,7 +216,7 @@ class UsedCarsScraperOrchestrator:
                 "Full Address": listing.get("full_address"),
                 "Status": listing.get("status"),
                 "Images Count": listing.get("images_count"),
-                "S3 Images": s3_images_str,
+                "R2 Images": R2_images_str,
                 "Description": listing.get("description", ""),
                 "Category": listing.get("category"),
                 "Views": listing.get("views_no"),
@@ -367,19 +367,19 @@ class UsedCarsScraperOrchestrator:
                     
                     self.create_excel_file(str(excel_path), category_data)
                     
-                    # Upload to S3 with excel-files folder structure
-                    if self.s3_helper:
-                        s3_excel_key = f"excel-files/{excel_filename}"
-                        s3_path = self.s3_helper.upload_file(
+                    # Upload to R2 with excel-files folder structure
+                    if self.R2_helper:
+                        R2_excel_key = f"excel-files/{excel_filename}"
+                        R2_path = self.R2_helper.upload_file(
                             str(excel_path),
-                            s3_excel_key,
+                            R2_excel_key,
                             self.save_date
                         )
                         
-                        if s3_path:
-                            logger.info(f"✓ Uploaded to S3: {s3_path}")
+                        if R2_path:
+                            logger.info(f"✓ Uploaded to R2: {R2_path}")
                         else:
-                            logger.error(f"✗ Failed to upload {excel_filename} to S3")
+                            logger.error(f"✗ Failed to upload {excel_filename} to R2")
                     
                     await asyncio.sleep(0.5)  # Be gentle with the server
                     

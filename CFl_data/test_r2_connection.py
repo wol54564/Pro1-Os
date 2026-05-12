@@ -1,4 +1,4 @@
-"""
+﻿"""
 Cloudflare R2 connection test.
 
 Checks:
@@ -55,14 +55,14 @@ def check_env() -> bool:
 
 def build_client():
     return boto3.client(
-        "s3",
+        "R2",
         endpoint_url=os.environ["CF_R2_ENDPOINT_URL"],
         aws_access_key_id=os.environ["CF_R2_ACCESS_KEY_ID"],
         aws_secret_access_key=os.environ["CF_R2_SECRET_ACCESS_KEY"],
         region_name="auto",
         config=Config(
-            signature_version="s3v4",
-            s3={"addressing_style": "path"},
+            signature_version="R2v4",
+            R2={"addressing_style": "path"},
         ),
     )
 

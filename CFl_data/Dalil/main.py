@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import pandas as pd
 import json
 import logging
@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
 from json_scraper import DalilJsonScraper
-from s3_helper import S3Helper
+from R2_helper import R2Helper
 import re
 from urllib.parse import urlparse
 
@@ -20,33 +20,33 @@ logger = logging.getLogger(__name__)
 
 class DalilScraperOrchestrator:
     """
-    Orchestrates the scraping of Dalil directory data with AWS S3 integration
+    Orchestrates the scraping of Dalil directory data with AWS R2 integration
     Creates Excel file with multiple sheets (one per category)
-    Downloads and uploads images to S3
+    Downloads and uploads images to R2
     """
     
     def __init__(self, bucket_name: str, profile_name: Optional[str] = None, temp_dir: str = "temp_data"):
         self.scraper = None
-        self.s3_helper = None
+        self.R2_helper = None
         self.bucket_name = bucket_name
         self.profile_name = profile_name
         self.temp_dir = Path(temp_dir)
         self.temp_dir.mkdir(exist_ok=True)
         self.save_date = datetime.now()
-        logger.info(f"Saving to S3 with date: {self.save_date.strftime('%Y-%m-%d')}")
+        logger.info(f"Saving to R2 with date: {self.save_date.strftime('%Y-%m-%d')}")
         
     async def initialize(self):
-        """Initialize the scraper and S3 client"""
+        """Initialize the scraper and R2 client"""
         self.scraper = DalilJsonScraper()
         await self.scraper.init_browser()
         
         try:
-            self.s3_helper = S3Helper(
+            self.R2_helper = R2Helper(
                 bucket_name=self.bucket_name,
                 profile_name=self.profile_name
             )
         except Exception as e:
-            logger.error(f"Failed to initialize S3: {e}")
+            logger.error(f"Failed to initialize R2: {e}")
             raise
     
     async def cleanup(self):
@@ -92,8 +92,8 @@ class DalilScraperOrchestrator:
     
     async def download_and_upload_images(self, businesses: List[Dict], category_slug: str) -> None:
         """
-        Download images for all businesses and upload to S3
-        Updates businesses list with S3 image paths
+        Download images for all businesses and Upload to R2
+        Updates businesses list with R2 image paths
         
         Args:
             businesses: List of business dictionaries
@@ -136,21 +136,21 @@ class DalilScraperOrchestrator:
             
             for business_idx, image_urls, business_id in batch:
                 for img_type, img_url in image_urls:
-                    # Generate S3 path
+                    # Generate R2 path
                     image_filename = self.generate_filename_from_url(
                         img_url, 
                         str(business_id), 
                         hash(img_url) % 10000
                     )
-                    s3_path = f"images/{category_slug}/{image_filename}"
+                    R2_path = f"images/{category_slug}/{image_filename}"
                     
                     # Create task
-                    task = self.s3_helper.download_and_upload_image(
+                    task = self.R2_helper.download_and_upload_image(
                         img_url,
-                        s3_path,
+                        R2_path,
                         self.save_date
                     )
-                    batch_tasks.append((business_idx, img_type, img_url, s3_path, task))
+                    batch_tasks.append((business_idx, img_type, img_url, R2_path, task))
             
             # Execute batch
             if batch_tasks:
@@ -160,17 +160,17 @@ class DalilScraperOrchestrator:
                 )
                 
                 # Process results
-                for (business_idx, img_type, img_url, s3_path, _), result in zip(batch_tasks, results):
-                    if isinstance(result, str):  # Success - got S3 key
-                        # Add to business's s3_images_paths
-                        if "s3_images_paths" not in businesses[business_idx]:
-                            businesses[business_idx]["s3_images_paths"] = []
+                for (business_idx, img_type, img_url, R2_path, _), result in zip(batch_tasks, results):
+                    if isinstance(result, str):  # Success - got R2 key
+                        # Add to business's r2_images_paths
+                        if "r2_images_paths" not in businesses[business_idx]:
+                            businesses[business_idx]["r2_images_paths"] = []
                         
-                        businesses[business_idx]["s3_images_paths"].append({
+                        businesses[business_idx]["r2_images_paths"].append({
                             "type": img_type,
                             "original_url": img_url,
-                            "s3_path": result,
-                            "s3_url": self.s3_helper.generate_s3_url(result)
+                            "R2_path": result,
+                            "R2_url": self.R2_helper.generate_R2_url(result)
                         })
                     elif isinstance(result, Exception):
                         logger.warning(f"Failed to upload image {img_url}: {result}")
@@ -178,20 +178,20 @@ class DalilScraperOrchestrator:
                 # Small delay between batches
                 await asyncio.sleep(0.5)
         
-        # Format s3_images_paths as a JSON string for each business
+        # Format r2_images_paths as a JSON string for each business
         for business in businesses:
-            if "s3_images_paths" in business:
-                business["s3_images_paths_json"] = json.dumps(
-                    business["s3_images_paths"], 
+            if "r2_images_paths" in business:
+                business["r2_images_paths_json"] = json.dumps(
+                    business["r2_images_paths"], 
                     ensure_ascii=False
                 )
-                # Create a simple string list of S3 paths for easy viewing
-                business["s3_images_paths"] = " | ".join([
-                    img["s3_url"] for img in business["s3_images_paths"]
+                # Create a simple string list of R2 paths for easy viewing
+                business["r2_images_paths"] = " | ".join([
+                    img["R2_url"] for img in business["r2_images_paths"]
                 ])
             else:
-                business["s3_images_paths"] = ""
-                business["s3_images_paths_json"] = "[]"
+                business["r2_images_paths"] = ""
+                business["r2_images_paths_json"] = "[]"
         
         logger.info(f"✓ Completed image processing for {category_slug}")
     
@@ -235,7 +235,7 @@ class DalilScraperOrchestrator:
                     "working_hours",
                     "delivery", "takeaway", "dine_in", "parking", "wifi", "wheelchair_accessible",
                     "media_count", "media_urls", "gallery_urls", "menu_urls",
-                    "s3_images_paths", "s3_images_paths_json",
+                    "r2_images_paths", "r2_images_paths_json",
                     "recent_reviews_json",
                     "view_count", "status",
                     "created_at", "updated_at"
@@ -271,9 +271,9 @@ class DalilScraperOrchestrator:
         
         return results
     
-    async def save_to_s3(self, categories_data: List[Dict]) -> Dict:
+    async def save_to_R2(self, categories_data: List[Dict]) -> Dict:
         """
-        Save all data to S3
+        Save all data to R2
         - Creates Excel file with multiple sheets
         - Downloads and uploads images
         - Uploads Excel and JSON summary
@@ -307,9 +307,9 @@ class DalilScraperOrchestrator:
                     
                     # Count images
                     for business in category_data["businesses"]:
-                        if business.get("s3_images_paths_json"):
+                        if business.get("r2_images_paths_json"):
                             try:
-                                images = json.loads(business["s3_images_paths_json"])
+                                images = json.loads(business["r2_images_paths_json"])
                                 upload_summary["total_images"] += len(images)
                             except:
                                 pass
@@ -321,24 +321,24 @@ class DalilScraperOrchestrator:
             
             excel_file = self.create_excel_with_sheets(categories_data)
             
-            # Upload Excel to S3
+            # Upload excel to R2
             logger.info("\n" + "="*80)
-            logger.info("UPLOADING TO S3")
+            logger.info("UPLOADING TO R2")
             logger.info("="*80 + "\n")
             
-            s3_excel_path = await asyncio.to_thread(
-                self.s3_helper.upload_file,
+            R2_excel_path = await asyncio.to_thread(
+                self.R2_helper.upload_file,
                 str(excel_file),
                 f"dalil_directory_{self.save_date.strftime('%Y%m%d')}.xlsx",
                 self.save_date
             )
             
-            if s3_excel_path:
+            if R2_excel_path:
                 upload_summary["excel_file"] = {
-                    "s3_path": s3_excel_path,
-                    "s3_url": self.s3_helper.generate_s3_url(s3_excel_path)
+                    "R2_path": R2_excel_path,
+                    "R2_url": self.R2_helper.generate_R2_url(R2_excel_path)
                 }
-                logger.info(f"✓ Uploaded Excel file: {s3_excel_path}")
+                logger.info(f"✓ Uploaded Excel file: {R2_excel_path}")
             
             excel_file.unlink(missing_ok=True)
             
@@ -348,7 +348,7 @@ class DalilScraperOrchestrator:
             
             json_summary = {
                 "scraped_at": datetime.now().isoformat(),
-                "saved_to_s3_date": self.save_date.strftime('%Y-%m-%d'),
+                "saved_to_R2_date": self.save_date.strftime('%Y-%m-%d'),
                 "total_categories": len(categories_data),
                 "total_businesses": total_businesses,
                 "total_images": upload_summary["total_images"],
@@ -367,24 +367,24 @@ class DalilScraperOrchestrator:
             with open(temp_json, 'w', encoding='utf-8') as f:
                 json.dump(json_summary, f, ensure_ascii=False, indent=2)
             
-            s3_json_path = await asyncio.to_thread(
-                self.s3_helper.upload_file,
+            R2_json_path = await asyncio.to_thread(
+                self.R2_helper.upload_file,
                 str(temp_json),
                 f"dalil_summary_{self.save_date.strftime('%Y%m%d')}.json",
                 self.save_date
             )
             
-            if s3_json_path:
+            if R2_json_path:
                 upload_summary["json_summary"] = {
-                    "s3_path": s3_json_path,
-                    "s3_url": self.s3_helper.generate_s3_url(s3_json_path)
+                    "R2_path": R2_json_path,
+                    "R2_url": self.R2_helper.generate_R2_url(R2_json_path)
                 }
-                logger.info(f"✓ Uploaded JSON summary: {s3_json_path}")
+                logger.info(f"✓ Uploaded JSON summary: {R2_json_path}")
             
             temp_json.unlink(missing_ok=True)
             
         except Exception as e:
-            logger.error(f"Error in S3 save: {e}", exc_info=True)
+            logger.error(f"Error in R2 save: {e}", exc_info=True)
         
         return upload_summary
 
@@ -410,8 +410,8 @@ async def main():
         categories_data = await orchestrator.scrape_all_categories()
         
         if categories_data:
-            # Save to S3
-            upload_summary = await orchestrator.save_to_s3(categories_data)
+            # Save to R2
+            upload_summary = await orchestrator.save_to_R2(categories_data)
             
             # Print summary
             logger.info("\n" + "="*80)
@@ -422,10 +422,10 @@ async def main():
             logger.info(f"Total images: {upload_summary['total_images']}")
             
             if upload_summary.get("excel_file"):
-                logger.info(f"\nExcel file: {upload_summary['excel_file']['s3_url']}")
+                logger.info(f"\nExcel file: {upload_summary['excel_file']['R2_url']}")
             
             if upload_summary.get("json_summary"):
-                logger.info(f"JSON summary: {upload_summary['json_summary']['s3_url']}")
+                logger.info(f"JSON summary: {upload_summary['json_summary']['R2_url']}")
             
         else:
             logger.error("Scraping failed - no data!")

@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import pandas as pd
 import json
 import logging
@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional
 from json_scraper import AutomotiveServicesJsonScraper
-from s3_helper import S3Helper
+from R2_helper import R2Helper
 from io import BytesIO
 
 logging.basicConfig(
@@ -19,20 +19,20 @@ logger = logging.getLogger(__name__)
 
 class AutomotiveServicesScraperOrchestrator:
     """
-    Orchestrates the scraping of automotive services subcategories with AWS S3 integration
+    Orchestrates the scraping of automotive services subcategories with AWS R2 integration
     
     Flow:
     1. Fetch all subcategories from automotive-services category
     2. For each subcategory, fetch all listings
     3. For each listing, fetch detailed information
     4. Organize data into one Excel file with subcategories as sheet names
-    5. Upload Excel file and images to S3
+    5. Upload Excel file and images to R2
     """
     
     def __init__(self, bucket_name: str, profile_name: Optional[str] = None, 
                  temp_dir: str = "temp_data", max_listings_per_subcategory: Optional[int] = None):
         self.scraper = None
-        self.s3_helper = None
+        self.R2_helper = None
         self.bucket_name = bucket_name
         self.profile_name = profile_name
         self.temp_dir = Path(temp_dir)
@@ -42,24 +42,24 @@ class AutomotiveServicesScraperOrchestrator:
         self.save_date = datetime.now()
         
         logger.info(f"Scraping data for date: {self.scrape_date.strftime('%Y-%m-%d')}")
-        logger.info(f"Saving to S3 with date: {self.save_date.strftime('%Y-%m-%d')}")
+        logger.info(f"Saving to R2 with date: {self.save_date.strftime('%Y-%m-%d')}")
         if max_listings_per_subcategory:
             logger.info(f"Max listings per subcategory: {max_listings_per_subcategory}")
         else:
             logger.info("Mode: Scrape ALL available listings")
     
     async def initialize(self):
-        """Initialize the scraper and S3 client"""
+        """Initialize the scraper and R2 client"""
         self.scraper = AutomotiveServicesJsonScraper()
         
         try:
-            self.s3_helper = S3Helper(
+            self.R2_helper = R2Helper(
                 bucket_name=self.bucket_name,
                 profile_name=self.profile_name
             )
-            logger.info(f"S3Helper initialized for bucket: {self.bucket_name}")
+            logger.info(f"R2Helper initialized for bucket: {self.bucket_name}")
         except Exception as e:
-            logger.error(f"Failed to initialize S3: {e}")
+            logger.error(f"Failed to initialize R2: {e}")
             raise
     
     async def cleanup(self):
@@ -127,14 +127,14 @@ class AutomotiveServicesScraperOrchestrator:
                 
                 if images:
                     logger.info(f"    Processing {len(images)} images for {slug} (ID: {listing_id})...")
-                    s3_image_urls = []
+                    R2_image_urls = []
                     
                     for img_index, image_url in enumerate(images):
                         try:
                             image_data = await self.scraper.download_image(image_url)
                             if image_data:
-                                s3_path = await asyncio.to_thread(
-                                    self.s3_helper.upload_image,
+                                R2_path = await asyncio.to_thread(
+                                    self.R2_helper.upload_image,
                                     image_url,
                                     image_data,
                                     subcategory_slug,
@@ -142,9 +142,9 @@ class AutomotiveServicesScraperOrchestrator:
                                     listing_id,
                                     img_index
                                 )
-                                if s3_path:
-                                    s3_url = self.s3_helper.generate_s3_url(s3_path)
-                                    s3_image_urls.append(s3_url)
+                                if R2_path:
+                                    R2_url = self.R2_helper.generate_R2_url(R2_path)
+                                    R2_image_urls.append(R2_url)
                                     logger.info(f"      Image {img_index}: {listing_id}_{img_index}.jpg ✓")
                             
                             await asyncio.sleep(0.1)
@@ -152,9 +152,9 @@ class AutomotiveServicesScraperOrchestrator:
                             logger.warning(f"      Failed to download/upload image {image_url}: {e}")
                             continue
                     
-                    # Add S3 image URLs to details
-                    details["s3_images"] = s3_image_urls
-                    logger.info(f"    Successfully uploaded {len(s3_image_urls)} images")
+                    # Add R2 image URLs to details
+                    details["r2_images"] = R2_image_urls
+                    logger.info(f"    Successfully uploaded {len(R2_image_urls)} images")
                 
                 detailed_listings.append(details)
                 await asyncio.sleep(0.5)  # Be nice to server
@@ -290,7 +290,7 @@ class AutomotiveServicesScraperOrchestrator:
                     "Total Subcategories": len(all_data),
                     "Total Listings": total_listings,
                     "Data Scraped Date": self.scrape_date.strftime('%Y-%m-%d'),
-                    "Saved to S3 Date": self.save_date.strftime('%Y-%m-%d'),
+                    "Saved to R2 Date": self.save_date.strftime('%Y-%m-%d'),
                 }]
                 pd.DataFrame(info_data).to_excel(writer, sheet_name='Info', index=False)
                 logger.info(f"  Created sheet: Info")
@@ -319,34 +319,34 @@ class AutomotiveServicesScraperOrchestrator:
             logger.error(f"Error creating Excel file: {e}")
             return None
     
-    async def upload_excel_to_s3(self, excel_path: Path) -> Optional[str]:
+    async def upload_excel_to_R2(self, excel_path: Path) -> Optional[str]:
         """
-        Upload Excel file to S3
+        Upload Excel file to R2
         
         Args:
             excel_path: Path to the Excel file
         
         Returns:
-            S3 key or None if failed
+            R2 key or None if failed
         """
         try:
-            s3_key = await asyncio.to_thread(
-                self.s3_helper.upload_file,
+            R2_key = await asyncio.to_thread(
+                self.R2_helper.upload_file,
                 str(excel_path),
                 "excel-files/automotive-services.xlsx",
                 target_date=self.save_date
             )
             
-            if s3_key:
-                s3_url = self.s3_helper.generate_s3_url(s3_key)
-                logger.info(f"✓ Excel file uploaded to S3: {s3_url}")
-                return s3_key
+            if R2_key:
+                R2_url = self.R2_helper.generate_R2_url(R2_key)
+                logger.info(f"✓ Excel file Uploaded to R2: {R2_url}")
+                return R2_key
             else:
-                logger.error("Failed to upload Excel file to S3")
+                logger.error("Failed to upload Excel file to R2")
                 return None
                 
         except Exception as e:
-            logger.error(f"Error uploading Excel to S3: {e}")
+            logger.error(f"Error uploading Excel to R2: {e}")
             return None
     
     async def run(self, filter_yesterday: bool = False):
@@ -398,12 +398,12 @@ class AutomotiveServicesScraperOrchestrator:
                 logger.error("Failed to create Excel file")
                 return
             
-            # Step 4: Upload Excel to S3
+            # Step 4: Upload excel to R2
             logger.info("\n" + "="*60)
-            logger.info("STEP 4: Uploading Excel to S3...")
+            logger.info("STEP 4: Uploading Excel to R2...")
             logger.info("="*60)
             
-            await self.upload_excel_to_s3(excel_path)
+            await self.upload_excel_to_R2(excel_path)
             
             logger.info("\n" + "="*60)
             logger.info("✓ ALL TASKS COMPLETED SUCCESSFULLY!")

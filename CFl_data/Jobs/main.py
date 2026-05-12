@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import pandas as pd
 import json
 import logging
@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional
 from json_scraper import JobsJsonScraper
-from s3_helper import S3Helper
+from R2_helper import R2Helper
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 class JobsScraperOrchestrator:
     """
-    Orchestrates the scraping of jobs data with AWS S3 integration
+    Orchestrates the scraping of jobs data with AWS R2 integration
     Scrapes main subcategories: Job Openings, Job Seeker
     Each main subcategory has multiple child categories (Part Time Job, Accounting, etc.)
     Creates separate Excel files for each main subcategory with sheets for each child category
@@ -26,29 +26,29 @@ class JobsScraperOrchestrator:
     
     def __init__(self, bucket_name: str, profile_name: Optional[str] = None, temp_dir: str = "temp_data"):
         self.scraper = None
-        self.s3_helper = None
+        self.R2_helper = None
         self.bucket_name = bucket_name
         self.profile_name = profile_name
         self.temp_dir = Path(temp_dir)
         self.temp_dir.mkdir(exist_ok=True)
         self.scrape_date = datetime.now() - timedelta(days=1)  # Yesterday's data for scraping
-        self.save_date = datetime.now()  # Today's date for S3 folder partitioning
+        self.save_date = datetime.now()  # Today's date for R2 folder partitioning
         logger.info(f"Scraping data for date: {self.scrape_date.strftime('%Y-%m-%d')}")
-        logger.info(f"Saving to S3 with date: {self.save_date.strftime('%Y-%m-%d')}")
+        logger.info(f"Saving to R2 with date: {self.save_date.strftime('%Y-%m-%d')}")
         logger.info("Mode: Scrape ALL available pages (no limit)")
         
     async def initialize(self):
-        """Initialize the scraper and S3 client"""
+        """Initialize the scraper and R2 client"""
         self.scraper = JobsJsonScraper()
         # No browser initialization needed with BeautifulSoup
         
         try:
-            self.s3_helper = S3Helper(
+            self.R2_helper = R2Helper(
                 bucket_name=self.bucket_name,
                 profile_name=self.profile_name
             )
         except Exception as e:
-            logger.error(f"Failed to initialize S3: {e}")
+            logger.error(f"Failed to initialize R2: {e}")
             raise
         
     async def cleanup(self):
@@ -73,7 +73,7 @@ class JobsScraperOrchestrator:
             subcategory_slug: Category slug for organizing images
         
         Returns:
-            List of detailed listing information with S3 image URLs
+            List of detailed listing information with R2 image URLs
         """
         detailed_listings = []
         
@@ -97,14 +97,14 @@ class JobsScraperOrchestrator:
                     
                     if images:
                         logger.info(f"Processing {len(images)} images for {slug} (ID: {listing_id})...")
-                        s3_image_urls = []
+                        R2_image_urls = []
                         
                         for img_index, image_url in enumerate(images):
                             try:
                                 image_data = await self.scraper.download_image(image_url)
                                 if image_data:
-                                    s3_path = await asyncio.to_thread(
-                                        self.s3_helper.upload_image,
+                                    R2_path = await asyncio.to_thread(
+                                        self.R2_helper.upload_image,
                                         image_url,
                                         image_data,
                                         subcategory_slug,
@@ -112,9 +112,9 @@ class JobsScraperOrchestrator:
                                         listing_id,
                                         img_index
                                     )
-                                    if s3_path:
-                                        s3_url = self.s3_helper.generate_s3_url(s3_path)
-                                        s3_image_urls.append(s3_url)
+                                    if R2_path:
+                                        R2_url = self.R2_helper.generate_R2_url(R2_path)
+                                        R2_image_urls.append(R2_url)
                                         logger.info(f"  Image {img_index}: {listing_id}_{img_index}.jpg ✓")
                                 
                                 await asyncio.sleep(0.1)
@@ -122,9 +122,9 @@ class JobsScraperOrchestrator:
                                 logger.warning(f"Failed to download/upload image {image_url}: {e}")
                                 continue
                         
-                        # Add S3 image URLs to details
-                        details["s3_images"] = s3_image_urls
-                        logger.info(f"Successfully uploaded {len(s3_image_urls)} images")
+                        # Add R2 image URLs to details
+                        details["r2_images"] = R2_image_urls
+                        logger.info(f"Successfully uploaded {len(R2_image_urls)} images")
                     
                     detailed_listings.append(details)
                     logger.debug(f"✓ Retrieved details for {slug}")
@@ -284,9 +284,9 @@ class JobsScraperOrchestrator:
             logger.error(f"Error scraping main subcategories: {e}")
             return []
     
-    async def save_all_to_s3(self, results: List[Dict]) -> Dict:
+    async def save_all_to_R2(self, results: List[Dict]) -> Dict:
         """
-        Save all data to S3 with proper partitioning
+        Save all data to R2 with proper partitioning
         Creates separate Excel files for each main subcategory
         Each Excel file has sheets for each child category with summary
         """
@@ -306,7 +306,7 @@ class JobsScraperOrchestrator:
                 logger.warning("No data to upload!")
                 return upload_summary
             
-            logger.info("\nUploading to AWS S3...")
+            logger.info("\nUploading to AWS R2...")
             
             # Create separate Excel file for each main subcategory
             for result in results:
@@ -331,7 +331,7 @@ class JobsScraperOrchestrator:
                         "Total Child Categories": len(result["child_categories"]),
                         "Total Listings": result["total_listings"],
                         "Data Scraped Date": self.scrape_date.strftime('%Y-%m-%d'),
-                        "Saved to S3 Date": self.save_date.strftime('%Y-%m-%d'),
+                        "Saved to R2 Date": self.save_date.strftime('%Y-%m-%d'),
                     }]
                     pd.DataFrame(info_data).to_excel(writer, sheet_name='Info', index=False)
                     
@@ -346,25 +346,25 @@ class JobsScraperOrchestrator:
                             df.to_excel(writer, sheet_name=sheet_name, index=False)
                             logger.info(f"  Created sheet: {sheet_name} ({len(child_result['listings'])} listings)")
                 
-                # Upload Excel to S3
+                # Upload excel to R2
                 excel_filename = f"{main_subcat_slug}.xlsx"
-                s3_excel_path = await asyncio.to_thread(
-                    self.s3_helper.upload_file,
+                R2_excel_path = await asyncio.to_thread(
+                    self.R2_helper.upload_file,
                     str(temp_excel),
                     f"excel-files/{excel_filename}",
                     self.save_date,
                     retries=3
                 )
                 
-                if s3_excel_path:
-                    s3_url = self.s3_helper.generate_s3_url(s3_excel_path)
+                if R2_excel_path:
+                    R2_url = self.R2_helper.generate_R2_url(R2_excel_path)
                     upload_summary["excel_files"].append({
                         "name": main_subcat_slug,
                         "main_category": main_subcat_name,
                         "child_categories_count": len(result["child_categories"]),
                         "total_listings": result["total_listings"],
-                        "s3_path": s3_excel_path,
-                        "s3_url": s3_url
+                        "R2_path": R2_excel_path,
+                        "R2_url": R2_url
                     })
                     logger.info(f"✓ Uploaded: {excel_filename} ({result['total_listings']} listings across {len(result['child_categories'])} child categories)")
                 
@@ -375,18 +375,18 @@ class JobsScraperOrchestrator:
             with open(summary_file, 'w', encoding='utf-8') as f:
                 json.dump(upload_summary, f, indent=2, ensure_ascii=False)
             
-            s3_summary_path = await asyncio.to_thread(
-                self.s3_helper.upload_file,
+            R2_summary_path = await asyncio.to_thread(
+                self.R2_helper.upload_file,
                 str(summary_file),
                 "json-files/upload-summary.json",
                 self.save_date,
                 retries=3
             )
             
-            if s3_summary_path:
+            if R2_summary_path:
                 upload_summary["summary_json"] = {
-                    "s3_path": s3_summary_path,
-                    "s3_url": self.s3_helper.generate_s3_url(s3_summary_path)
+                    "R2_path": R2_summary_path,
+                    "R2_url": self.R2_helper.generate_R2_url(R2_summary_path)
                 }
                 logger.info(f"✓ Uploaded: upload-summary.json")
             
@@ -405,7 +405,7 @@ class JobsScraperOrchestrator:
             return upload_summary
             
         except Exception as e:
-            logger.error(f"Error saving to S3: {e}")
+            logger.error(f"Error Saving to R2: {e}")
             return upload_summary
     
     async def run(self) -> Dict:
@@ -423,8 +423,8 @@ class JobsScraperOrchestrator:
                 logger.error("No results to save!")
                 return {"error": "No data scraped"}
             
-            # Save to S3
-            upload_summary = await self.save_all_to_s3(results)
+            # Save to R2
+            upload_summary = await self.save_all_to_R2(results)
             
             return upload_summary
             
@@ -438,7 +438,7 @@ class JobsScraperOrchestrator:
 
 async def main():
     """
-    Main entry point - configure your S3 bucket name and AWS profile here
+    Main entry point - configure your R2 bucket name and AWS profile here
     """
     # Configure these values
     BUCKET_NAME = os.environ.get("CF_R2_BUCKET_NAME")

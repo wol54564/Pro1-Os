@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import pandas as pd
 import json
 import logging
@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
 from json_scraper import CommercialsJsonScraper
-from s3_helper import S3Helper
+from R2_helper import R2Helper
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,37 +18,37 @@ logger = logging.getLogger(__name__)
 
 class CommercialsScraperOrchestrator:
     """
-    Orchestrates the scraping of commercials data with AWS S3 integration
+    Orchestrates the scraping of commercials data with AWS R2 integration
     
     Features:
     - Scrapes all categories from commercials section
     - Fetches ad details for each category
-    - Downloads and uploads images to S3
-    - Saves Excel files to S3 with partitioning
+    - Downloads and uploads images to R2
+    - Saves Excel files to R2 with partitioning
     - Partitions by date: 4sale-data/commercials/year=YYYY/month=MM/day=DD/
     """
     
     def __init__(self, bucket_name: str, profile_name: Optional[str] = None, temp_dir: str = "temp_commercials"):
         self.scraper = None
-        self.s3_helper = None
+        self.R2_helper = None
         self.bucket_name = bucket_name
         self.profile_name = profile_name
         self.temp_dir = Path(temp_dir)
         self.temp_dir.mkdir(exist_ok=True)
         self.save_date = datetime.now()
-        logger.info(f"Saving to S3 with date: {self.save_date.strftime('%Y-%m-%d')}")
+        logger.info(f"Saving to R2 with date: {self.save_date.strftime('%Y-%m-%d')}")
         
     async def initialize(self):
-        """Initialize the scraper and S3 client"""
+        """Initialize the scraper and R2 client"""
         self.scraper = CommercialsJsonScraper()
         
         try:
-            self.s3_helper = S3Helper(
+            self.R2_helper = R2Helper(
                 bucket_name=self.bucket_name,
                 profile_name=self.profile_name
             )
         except Exception as e:
-            logger.error(f"Failed to initialize S3: {e}")
+            logger.error(f"Failed to initialize R2: {e}")
             raise
         
     async def cleanup(self):
@@ -73,7 +73,7 @@ class CommercialsScraperOrchestrator:
             category_slug: Category slug for organizing images
         
         Returns:
-            List of detailed ad information with S3 image paths
+            List of detailed ad information with R2 image paths
         """
         detailed_ads = []
         
@@ -93,7 +93,7 @@ class CommercialsScraperOrchestrator:
                 if details:
                     # Download and upload image if available
                     image_url = details.get("image")
-                    s3_image_path = None
+                    R2_image_path = None
                     
                     if image_url:
                         logger.info(f"Processing image for ad {ad_id}...")
@@ -103,9 +103,9 @@ class CommercialsScraperOrchestrator:
                             image_data = await self.scraper.download_image(image_url)
                             
                             if image_data:
-                                # Upload to S3
-                                s3_path = await asyncio.to_thread(
-                                    self.s3_helper.upload_image,
+                                # Upload to R2
+                                R2_path = await asyncio.to_thread(
+                                    self.R2_helper.upload_image,
                                     image_url,
                                     image_data,
                                     category_slug,
@@ -114,17 +114,17 @@ class CommercialsScraperOrchestrator:
                                     0
                                 )
                                 
-                                if s3_path:
-                                    s3_image_path = self.s3_helper.generate_s3_url(s3_path)
-                                    logger.info(f"  ✓ Image uploaded: {s3_image_path}")
+                                if R2_path:
+                                    R2_image_path = self.R2_helper.generate_R2_url(R2_path)
+                                    logger.info(f"  ✓ Image uploaded: {R2_image_path}")
                             
                             await asyncio.sleep(0.1)
                             
                         except Exception as e:
                             logger.warning(f"Failed to download/upload image {image_url}: {e}")
                     
-                    # Add S3 image path to details
-                    details["s3_image_path"] = s3_image_path
+                    # Add R2 image path to details
+                    details["R2_image_path"] = R2_image_path
                     detailed_ads.append(details)
                     
                 else:
@@ -222,7 +222,7 @@ class CommercialsScraperOrchestrator:
             column_order = [
                 'id', 'title', 'category_slug', 'category_id',
                 'phone', 'whatsapp_phone', 'views_count',
-                'image', 's3_image_path', 'target_url', 'open_target_url',
+                'image', 'R2_image_path', 'target_url', 'open_target_url',
                 'is_landing', 'url'
             ]
             
@@ -247,43 +247,43 @@ class CommercialsScraperOrchestrator:
             logger.error(f"Error saving Excel file: {e}")
             return None
     
-    async def upload_excel_to_s3(self, excel_path: str, category_slug: str) -> Optional[str]:
+    async def upload_excel_to_R2(self, excel_path: str, category_slug: str) -> Optional[str]:
         """
-        Upload Excel file to S3
+        Upload Excel file to R2
         
         Args:
             excel_path: Local path to Excel file
             category_slug: Category slug for naming
         
         Returns:
-            S3 path or None if failed
+            R2 path or None if failed
         """
         try:
             filename = Path(excel_path).name
             
-            s3_path = await asyncio.to_thread(
-                self.s3_helper.upload_file,
+            R2_path = await asyncio.to_thread(
+                self.R2_helper.upload_file,
                 excel_path,
                 filename,
                 self.save_date,
                 subfolder='excel files'
             )
             
-            if s3_path:
-                s3_url = self.s3_helper.generate_s3_url(s3_path)
-                logger.info(f"✓ Uploaded Excel to: {s3_url}")
-                return s3_url
+            if R2_path:
+                R2_url = self.R2_helper.generate_R2_url(R2_path)
+                logger.info(f"✓ Uploaded Excel to: {R2_url}")
+                return R2_url
             else:
-                logger.error(f"Failed to upload Excel file to S3")
+                logger.error(f"Failed to upload Excel file to R2")
                 return None
                 
         except Exception as e:
-            logger.error(f"Error uploading Excel to S3: {e}")
+            logger.error(f"Error uploading Excel to R2: {e}")
             return None
     
     async def run(self):
         """
-        Main execution method - scrapes all categories and uploads to S3
+        Main execution method - scrapes all categories and uploads to R2
         """
         try:
             await self.initialize()
@@ -313,16 +313,16 @@ class CommercialsScraperOrchestrator:
                 # Save to Excel
                 excel_path = self.save_category_to_excel(category_data)
                 
-                # Upload to S3
-                s3_url = None
+                # Upload to R2
+                R2_url = None
                 if excel_path:
-                    s3_url = await self.upload_excel_to_s3(excel_path, category["slug"])
+                    R2_url = await self.upload_excel_to_R2(excel_path, category["slug"])
                 
                 results.append({
                     "category": category["name"],
                     "slug": category["slug"],
                     "total_ads": category_data["total_ads"],
-                    "excel_s3_url": s3_url
+                    "excel_R2_url": R2_url
                 })
                 
                 logger.info(f"\n✓ Completed: {category['name']} - {category_data['total_ads']} ads")
@@ -339,10 +339,10 @@ class CommercialsScraperOrchestrator:
             
             for result in results:
                 logger.info(f"  - {result['category']}: {result['total_ads']} ads")
-                if result['excel_s3_url']:
-                    logger.info(f"    S3: {result['excel_s3_url']}")
+                if result['excel_R2_url']:
+                    logger.info(f"    R2: {result['excel_R2_url']}")
             
-            logger.info(f"\nS3 Partition: {self.s3_helper.get_partition_prefix(self.save_date)}")
+            logger.info(f"\nR2 Partition: {self.R2_helper.get_partition_prefix(self.save_date)}")
             logger.info("="*60)
             
         except Exception as e:
@@ -356,10 +356,10 @@ async def main():
     """Entry point for the scraper"""
     
     # Get bucket name from environment variable (for GitHub Actions)
-    bucket_name = os.getenv('AWS_S3_BUCKET', 'your-bucket-name')
+    bucket_name = os.getenv('AWS_R2_BUCKET', 'your-bucket-name')
     
     if bucket_name == 'your-bucket-name':
-        logger.warning("Using default bucket name. Set AWS_S3_BUCKET environment variable for production.")
+        logger.warning("Using default bucket name. Set AWS_R2_BUCKET environment variable for production.")
     
     orchestrator = CommercialsScraperOrchestrator(
         bucket_name=bucket_name,

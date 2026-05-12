@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import pandas as pd
 import json
 import logging
@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional
 from json_scraper import RestAutomotiveJsonScraper
-from s3_helper import S3Helper
+from R2_helper import R2Helper
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,35 +18,35 @@ logger = logging.getLogger(__name__)
 
 class RestAutomotiveScraperOrchestrator:
     """
-    Orchestrates the scraping of Rest-Automative-Part1 data with AWS S3 integration
+    Orchestrates the scraping of Rest-Automative-Part1 data with AWS R2 integration
     Scrapes categories: Watercraft, Spare Parts, Automotive Accessories, CMVs, Rentals
     """
     
     def __init__(self, bucket_name: str, profile_name: Optional[str] = None, temp_dir: str = "temp_data"):
         self.scraper = None
-        self.s3_helper = None
+        self.R2_helper = None
         self.bucket_name = bucket_name
         self.profile_name = profile_name
         self.temp_dir = Path(temp_dir)
         self.temp_dir.mkdir(exist_ok=True)
         self.scrape_date = datetime.now() - timedelta(days=1)  # Yesterday's data for scraping
-        self.save_date = datetime.now()  # Today's date for S3 folder partitioning
+        self.save_date = datetime.now()  # Today's date for R2 folder partitioning
         logger.info(f"Scraping data for date: {self.scrape_date.strftime('%Y-%m-%d')}")
-        logger.info(f"Saving to S3 with date: {self.save_date.strftime('%Y-%m-%d')}")
+        logger.info(f"Saving to R2 with date: {self.save_date.strftime('%Y-%m-%d')}")
         logger.info("Mode: Scrape ALL available pages (no limit)")
         
     async def initialize(self):
-        """Initialize the scraper and S3 client"""
+        """Initialize the scraper and R2 client"""
         self.scraper = RestAutomotiveJsonScraper()
         # No browser initialization needed with BeautifulSoup
         
         try:
-            self.s3_helper = S3Helper(
+            self.R2_helper = R2Helper(
                 bucket_name=self.bucket_name,
                 profile_name=self.profile_name
             )
         except Exception as e:
-            logger.error(f"Failed to initialize S3: {e}")
+            logger.error(f"Failed to initialize R2: {e}")
             raise
         
     async def cleanup(self):
@@ -72,7 +72,7 @@ class RestAutomotiveScraperOrchestrator:
             category_name: Category name (e.g., 'Watercraft') for folder structure
         
         Returns:
-            List of detailed listing information with S3 image URLs
+            List of detailed listing information with R2 image URLs
         """
         detailed_listings = []
         
@@ -95,14 +95,14 @@ class RestAutomotiveScraperOrchestrator:
                     
                     if images:
                         logger.info(f"Processing {len(images)} images for {slug} (ID: {listing_id})...")
-                        s3_image_urls = []
+                        R2_image_urls = []
                         
                         for img_index, image_url in enumerate(images):
                             try:
                                 image_data = await self.scraper.download_image(image_url)
                                 if image_data:
-                                    s3_path = await asyncio.to_thread(
-                                        self.s3_helper.upload_image,
+                                    R2_path = await asyncio.to_thread(
+                                        self.R2_helper.upload_image,
                                         image_url,
                                         image_data,
                                         category_slug,
@@ -112,9 +112,9 @@ class RestAutomotiveScraperOrchestrator:
                                         "rest-automotive-part1",
                                         category_name
                                     )
-                                    if s3_path:
-                                        s3_url = self.s3_helper.generate_s3_url(s3_path)
-                                        s3_image_urls.append(s3_url)
+                                    if R2_path:
+                                        R2_url = self.R2_helper.generate_R2_url(R2_path)
+                                        R2_image_urls.append(R2_url)
                                         logger.info(f"  Image {img_index}: {listing_id}_{img_index}.jpg ✓")
                                 
                                 await asyncio.sleep(0.1)
@@ -122,9 +122,9 @@ class RestAutomotiveScraperOrchestrator:
                                 logger.warning(f"Failed to download/upload image {image_url}: {e}")
                                 continue
                         
-                        # Add S3 image URLs to details
-                        details["s3_images"] = s3_image_urls
-                        logger.info(f"Successfully uploaded {len(s3_image_urls)} images")
+                        # Add R2 image URLs to details
+                        details["r2_images"] = R2_image_urls
+                        logger.info(f"Successfully uploaded {len(R2_image_urls)} images")
                     
                     detailed_listings.append(details)
                     logger.debug(f"✓ Retrieved details for {slug}")
@@ -249,9 +249,9 @@ class RestAutomotiveScraperOrchestrator:
             logger.error(f"Error scraping categories: {e}")
             return []
     
-    async def save_all_to_s3(self, results: List[Dict]) -> Dict:
+    async def save_all_to_R2(self, results: List[Dict]) -> Dict:
         """
-        Save all data to S3 with proper partitioning
+        Save all data to R2 with proper partitioning
         Creates separate Excel files for each category: Watercraft.xlsx, Spare Parts.xlsx, etc.
         """
         upload_summary = {
@@ -269,7 +269,7 @@ class RestAutomotiveScraperOrchestrator:
                 logger.warning("No data to upload!")
                 return upload_summary
             
-            logger.info("\nUploading to AWS S3...")
+            logger.info("\nUploading to AWS R2...")
             
             # Group results by parent category
             categories_dict = {}
@@ -310,7 +310,7 @@ class RestAutomotiveScraperOrchestrator:
                             "Total Subcategories": len(subcategories),
                             "Total Listings": total_listings_in_cat,
                             "Data Scraped Date": self.scrape_date.strftime('%Y-%m-%d'),
-                            "Saved to S3 Date": self.save_date.strftime('%Y-%m-%d'),
+                            "Saved to R2 Date": self.save_date.strftime('%Y-%m-%d'),
                         }]
                         pd.DataFrame(info_data).to_excel(writer, sheet_name='Info', index=False)
                         
@@ -326,9 +326,9 @@ class RestAutomotiveScraperOrchestrator:
                                 df.to_excel(writer, sheet_name=sheet_name, index=False)
                                 logger.info(f"  Sheet created: {sheet_name} ({len(listings)} listings)")
                     
-                    # Upload to S3 with correct folder name
-                    s3_excel_path = await asyncio.to_thread(
-                        self.s3_helper.upload_file,
+                    # Upload to R2 with correct folder name
+                    R2_excel_path = await asyncio.to_thread(
+                        self.R2_helper.upload_file,
                         str(temp_excel),
                         f"excel-files/{category_filename}.xlsx",
                         self.save_date,
@@ -336,8 +336,8 @@ class RestAutomotiveScraperOrchestrator:
                         folder_name="rest-automotive-part1"
                     )
                     
-                    if s3_excel_path:
-                        s3_url = self.s3_helper.generate_s3_url(s3_excel_path)
+                    if R2_excel_path:
+                        R2_url = self.R2_helper.generate_R2_url(R2_excel_path)
                         
                         # Add category info to summary
                         subcategories_info = [
@@ -355,8 +355,8 @@ class RestAutomotiveScraperOrchestrator:
                             "subcategories_count": len(subcategories_info),
                             "total_listings": total_listings_in_cat,
                             "subcategories": subcategories_info,
-                            "s3_path": s3_excel_path,
-                            "s3_url": s3_url
+                            "R2_path": R2_excel_path,
+                            "R2_url": R2_url
                         })
                         logger.info(f"✓ Uploaded: {category_filename}.xlsx ({total_listings_in_cat} listings across {len(subcategories)} subcategories)")
                     
@@ -367,7 +367,7 @@ class RestAutomotiveScraperOrchestrator:
             json_summary = {
                 "scraped_at": datetime.now().isoformat(),
                 "data_scraped_date": self.scrape_date.strftime('%Y-%m-%d'),
-                "saved_to_s3_date": self.save_date.strftime('%Y-%m-%d'),
+                "saved_to_R2_date": self.save_date.strftime('%Y-%m-%d'),
                 "total_categories": len(categories_dict),
                 "total_excel_files": len(upload_summary["excel_files"]),
                 "total_listings": total_listings,
@@ -396,22 +396,22 @@ class RestAutomotiveScraperOrchestrator:
             with open(temp_json, 'w', encoding='utf-8') as f:
                 json.dump(json_summary, f, ensure_ascii=False, indent=2)
             
-            s3_json_path = await asyncio.to_thread(
-                self.s3_helper.upload_file,
+            R2_json_path = await asyncio.to_thread(
+                self.R2_helper.upload_file,
                 str(temp_json),
                 f"json-files/summary_{self.save_date.strftime('%Y%m%d')}.json",
                 self.save_date,
                 folder_name="rest-automotive-part1"
             )
             
-            if s3_json_path:
-                upload_summary["json_files"].append(s3_json_path)
+            if R2_json_path:
+                upload_summary["json_files"].append(R2_json_path)
                 logger.info(f"✓ Uploaded JSON summary")
             
             temp_json.unlink(missing_ok=True)
             
         except Exception as e:
-            logger.error(f"Error in S3 upload: {e}")
+            logger.error(f"Error in R2 upload: {e}")
         
         return upload_summary
 
@@ -438,10 +438,10 @@ async def main():
         
         if results:
             logger.info("\n" + "="*60)
-            logger.info("UPLOADING TO S3")
+            logger.info("UPLOADING TO R2")
             logger.info("="*60)
             
-            upload_summary = await orchestrator.save_all_to_s3(results)
+            upload_summary = await orchestrator.save_all_to_R2(results)
             
             logger.info("\n" + "="*60)
             logger.info("SCRAPING COMPLETED")

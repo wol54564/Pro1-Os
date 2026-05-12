@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import pandas as pd
 import boto3
 import io
@@ -25,24 +25,24 @@ logger = logging.getLogger(__name__)
 
 
 class MainScraper:
-    def __init__(self, url, s3_bucket):
+    def __init__(self, url, R2_bucket):
         self.url = url
-        self.s3_bucket = s3_bucket
-        self.s3_client = boto3.client("s3")
+        self.R2_bucket = R2_bucket
+        self.R2_client = boto3.client("R2")
         self.chunk_size = 3
         self.chunk_delay = 5
         self.yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
         self.session = create_session()
         logger.info(f"Scraping data for date: {self.yesterday}")
 
-    async def upload_bytes_to_s3(self, data_bytes, s3_path):
-        """Upload bytes directly to S3."""
-        self.s3_client.put_object(
-            Bucket=self.s3_bucket,
-            Key=s3_path,
+    async def upload_bytes_to_R2(self, data_bytes, R2_path):
+        """Upload bytes directly to R2."""
+        self.R2_client.put_object(
+            Bucket=self.R2_bucket,
+            Key=R2_path,
             Body=data_bytes
         )
-        return f"s3://{self.s3_bucket}/{s3_path}"
+        return f"R2://{self.R2_bucket}/{R2_path}"
 
     async def download_image(self, url, brand_name, filename):
         """
@@ -50,7 +50,7 @@ class MainScraper:
         """
         try:
             today = datetime.now()
-            s3_path = (
+            R2_path = (
                 f"4sale-data/new-cars/year={today.year}/month={today.month}/day={today.day}/"
                 f"images/{brand_name}/{filename}"
             )
@@ -65,8 +65,8 @@ class MainScraper:
 
             img_bytes = response.content
 
-            await self.upload_bytes_to_s3(img_bytes, s3_path)
-            return s3_path
+            await self.upload_bytes_to_R2(img_bytes, R2_path)
+            return R2_path
 
         except Exception as e:
             print(f"Image download error for {url}: {e}")
@@ -121,10 +121,10 @@ class MainScraper:
 
                                 if img_url and img_file:
                                     # Use requests-based image download
-                                    s3_img_path = await self.download_image(
+                                    R2_img_path = await self.download_image(
                                         img_url, brand_name, img_file
                                     )
-                                    car_detail["image_s3_path"] = s3_img_path
+                                    car_detail["image_R2_path"] = R2_img_path
 
                             type_details.extend(detail_list)
 
@@ -142,7 +142,7 @@ class MainScraper:
             if all_car_details:
                 today = datetime.now()
 
-                s3_prefix = (
+                R2_prefix = (
                     f"4sale-data/new-cars/year={today.year}/month={today.month}/day={today.day}/excel_files/"
                 )
 
@@ -157,8 +157,8 @@ class MainScraper:
 
                 output.seek(0)
 
-                # Upload excel to S3
-                await self.upload_bytes_to_s3(output.read(), f"{s3_prefix}{excel_name}")
+                # Upload excel to R2
+                await self.upload_bytes_to_R2(output.read(), f"{R2_prefix}{excel_name}")
 
     async def scrape_and_save(self):
         scraper = CarScraper(self.url)
@@ -174,7 +174,7 @@ class MainScraper:
 
 if __name__ == "__main__":
     url = "https://www.q84sale.com/ar/automotive/new-cars-1"
-    s3_bucket = "data-collection-dl"
+    R2_bucket = "data-collection-dl"
 
-    main_scraper = MainScraper(url, s3_bucket)
+    main_scraper = MainScraper(url, R2_bucket)
     asyncio.run(main_scraper.scrape_and_save())

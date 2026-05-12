@@ -1,4 +1,4 @@
-import boto3
+﻿import boto3
 import logging
 import os
 from pathlib import Path
@@ -14,7 +14,7 @@ CF_R2_SECRET_KEY = os.getenv('CF_R2_SECRET_ACCESS_KEY')
 CF_R2_ENDPOINT_URL = os.getenv('CF_R2_ENDPOINT_URL')
 
 
-class S3Helper:
+class R2Helper:
     """
     Helper class for Cloudflare R2 operations with partition structure for used-cars
     Partitions data by date: used-cars/year=YYYY/month=MM/day=DD/
@@ -22,7 +22,7 @@ class S3Helper:
     
     def __init__(self, bucket_name: str, profile_name: Optional[str] = None, region_name: str = None):
         """
-        Initialize S3 client using AWS access key and secret key
+        Initialize R2 client using AWS access key and secret key
         
         Args:
             bucket_name: R2 bucket name
@@ -42,8 +42,8 @@ class S3Helper:
                 raise ValueError("CF_R2_ENDPOINT_URL environment variable must be set (e.g. https://<account_id>.r2.cloudflarestorage.com)")
             
             logger.info(f"Connecting to Cloudflare R2 endpoint: {CF_R2_ENDPOINT_URL}, bucket: {bucket_name}")
-            self.s3_client = boto3.client(
-                's3',
+            self.R2_client = boto3.client(
+                'R2',
                 endpoint_url=CF_R2_ENDPOINT_URL.rstrip("/").removesuffix("/" + bucket_name),
                 aws_access_key_id=CF_R2_ACCESS_KEY,
                 aws_secret_access_key=CF_R2_SECRET_KEY,
@@ -52,9 +52,9 @@ class S3Helper:
             
             # Test connection with HeadBucket (optional - some IAM roles may not have this permission)
             try:
-                self.s3_client.head_bucket(Bucket=self.bucket_name)
+                self.R2_client.head_bucket(Bucket=self.bucket_name)
                 logger.info(f"Successfully verified access to R2 bucket: {self.bucket_name}")
-            except self.s3_client.exceptions.NoSuchBucket:
+            except self.R2_client.exceptions.NoSuchBucket:
                 logger.error(f"Bucket does not exist: {self.bucket_name}")
                 raise
             except Exception as e:
@@ -68,7 +68,7 @@ class S3Helper:
     
     def get_partition_prefix(self, target_date: datetime = None) -> str:
         """
-        Get S3 partition prefix based on date
+        Get R2 partition prefix based on date
         Format: 4sale-data/used-cars/year=YYYY/month=MM/day=DD/
         
         Args:
@@ -87,22 +87,22 @@ class S3Helper:
         
         return f"4sale-data/used-cars/year={year}/month={month}/day={day}"
     
-    def upload_file(self, local_file_path: str, s3_filename: str, 
+    def upload_file(self, local_file_path: str, R2_filename: str, 
                     target_date: datetime = None, retries: int = 3) -> Optional[str]:
         """
-        Upload a file to S3 with automatic partitioning
+        Upload a file to R2 with automatic partitioning
         
         Args:
             local_file_path: Path to local file
-            s3_filename: Filename in S3 (relative path without partition)
+            R2_filename: Filename in R2 (relative path without partition)
             target_date: Date for partitioning (defaults to yesterday)
             retries: Number of retry attempts
         
         Returns:
-            Full S3 path or None if failed
+            Full R2 path or None if failed
         """
         partition = self.get_partition_prefix(target_date)
-        s3_key = f"{partition}/{s3_filename}"
+        R2_key = f"{partition}/{R2_filename}"
         
         for attempt in range(retries):
             try:
@@ -116,17 +116,17 @@ class S3Helper:
                 if content_type is None:
                     content_type = "application/octet-stream"
                 
-                logger.info(f"Uploading to S3 (attempt {attempt + 1}/{retries}): s3://{self.bucket_name}/{s3_key}")
+                logger.info(f"UPLOADING TO R2 (attempt {attempt + 1}/{retries}): R2://{self.bucket_name}/{R2_key}")
                 
-                self.s3_client.upload_file(
+                self.R2_client.upload_file(
                     local_file_path,
                     self.bucket_name,
-                    s3_key,
+                    R2_key,
                     ExtraArgs={'ContentType': content_type}
                 )
                 
-                logger.info(f"Successfully uploaded: {s3_key}")
-                return s3_key
+                logger.info(f"Successfully uploaded: {R2_key}")
+                return R2_key
                 
             except Exception as e:
                 logger.warning(f"Upload attempt {attempt + 1} failed: {e}")
@@ -136,41 +136,41 @@ class S3Helper:
         
         return None
     
-    def upload_file_obj(self, file_obj, s3_filename: str, 
+    def upload_file_obj(self, file_obj, R2_filename: str, 
                        target_date: datetime = None, retries: int = 3) -> Optional[str]:
         """
-        Upload a file object to S3 with automatic partitioning
+        Upload a file object to R2 with automatic partitioning
         
         Args:
             file_obj: File-like object
-            s3_filename: Filename in S3 (relative path without partition)
+            R2_filename: Filename in R2 (relative path without partition)
             target_date: Date for partitioning (defaults to yesterday)
             retries: Number of retry attempts
         
         Returns:
-            Full S3 path or None if failed
+            Full R2 path or None if failed
         """
         partition = self.get_partition_prefix(target_date)
-        s3_key = f"{partition}/{s3_filename}"
+        R2_key = f"{partition}/{R2_filename}"
         
         for attempt in range(retries):
             try:
                 # Determine content type based on filename
-                content_type, _ = mimetypes.guess_type(s3_filename)
+                content_type, _ = mimetypes.guess_type(R2_filename)
                 if content_type is None:
                     content_type = "application/octet-stream"
                 
-                logger.info(f"Uploading file object (attempt {attempt + 1}/{retries}): {s3_key}")
+                logger.info(f"Uploading file object (attempt {attempt + 1}/{retries}): {R2_key}")
                 
-                self.s3_client.upload_fileobj(
+                self.R2_client.upload_fileobj(
                     file_obj,
                     self.bucket_name,
-                    s3_key,
+                    R2_key,
                     ExtraArgs={'ContentType': content_type}
                 )
                 
-                logger.info(f"Successfully uploaded file object: {s3_key}")
-                return s3_key
+                logger.info(f"Successfully uploaded file object: {R2_key}")
+                return R2_key
                 
             except Exception as e:
                 logger.warning(f"Upload attempt {attempt + 1} failed: {e}")
@@ -180,13 +180,13 @@ class S3Helper:
         
         return None
     
-    def download_file(self, s3_filename: str, local_file_path: str, 
+    def download_file(self, R2_filename: str, local_file_path: str, 
                      target_date: datetime = None) -> bool:
         """
-        Download a file from S3
+        Download a file from R2
         
         Args:
-            s3_filename: Filename in S3 (relative path without partition)
+            R2_filename: Filename in R2 (relative path without partition)
             local_file_path: Path to save the local file
             target_date: Date for partitioning (defaults to yesterday)
         
@@ -194,16 +194,16 @@ class S3Helper:
             True if successful, False otherwise
         """
         partition = self.get_partition_prefix(target_date)
-        s3_key = f"{partition}/{s3_filename}"
+        R2_key = f"{partition}/{R2_filename}"
         
         try:
             # Create parent directories if they don't exist
             Path(local_file_path).parent.mkdir(parents=True, exist_ok=True)
             
-            logger.info(f"Downloading from S3: {s3_key}")
-            self.s3_client.download_file(
+            logger.info(f"Downloading from R2: {R2_key}")
+            self.R2_client.download_file(
                 self.bucket_name,
-                s3_key,
+                R2_key,
                 local_file_path
             )
             
@@ -211,16 +211,16 @@ class S3Helper:
             return True
             
         except Exception as e:
-            logger.error(f"Error downloading {s3_key}: {e}")
+            logger.error(f"Error downloading {R2_key}: {e}")
             return False
     
-    def download_file_obj(self, s3_filename: str, file_obj,
+    def download_file_obj(self, R2_filename: str, file_obj,
                          target_date: datetime = None) -> bool:
         """
-        Download a file from S3 to a file object
+        Download a file from R2 to a file object
         
         Args:
-            s3_filename: Filename in S3 (relative path without partition)
+            R2_filename: Filename in R2 (relative path without partition)
             file_obj: File-like object to write to
             target_date: Date for partitioning (defaults to yesterday)
         
@@ -228,36 +228,36 @@ class S3Helper:
             True if successful, False otherwise
         """
         partition = self.get_partition_prefix(target_date)
-        s3_key = f"{partition}/{s3_filename}"
+        R2_key = f"{partition}/{R2_filename}"
         
         try:
-            logger.info(f"Downloading from S3 to file object: {s3_key}")
-            self.s3_client.download_fileobj(
+            logger.info(f"Downloading from R2 to file object: {R2_key}")
+            self.R2_client.download_fileobj(
                 self.bucket_name,
-                s3_key,
+                R2_key,
                 file_obj
             )
             
-            logger.info(f"Successfully downloaded file object from: {s3_key}")
+            logger.info(f"Successfully downloaded file object from: {R2_key}")
             return True
             
         except Exception as e:
-            logger.error(f"Error downloading {s3_key} to file object: {e}")
+            logger.error(f"Error downloading {R2_key} to file object: {e}")
             return False
     
     def list_files(self, prefix: str = "") -> list:
         """
-        List all files in S3 with optional prefix filter
+        List all files in R2 with optional prefix filter
         
         Args:
-            prefix: S3 key prefix to filter by
+            prefix: R2 key prefix to filter by
         
         Returns:
             List of file keys
         """
         try:
             files = []
-            paginator = self.s3_client.get_paginator('list_objects_v2')
+            paginator = self.R2_client.get_paginator('list_objects_v2')
             pages = paginator.paginate(Bucket=self.bucket_name, Prefix=prefix)
             
             for page in pages:
@@ -272,45 +272,45 @@ class S3Helper:
             logger.error(f"Error listing files with prefix {prefix}: {e}")
             return []
     
-    def file_exists(self, s3_filename: str, target_date: datetime = None) -> bool:
+    def file_exists(self, R2_filename: str, target_date: datetime = None) -> bool:
         """
-        Check if a file exists in S3
+        Check if a file exists in R2
         
         Args:
-            s3_filename: Filename in S3 (relative path without partition)
+            R2_filename: Filename in R2 (relative path without partition)
             target_date: Date for partitioning (defaults to yesterday)
         
         Returns:
             True if file exists, False otherwise
         """
         partition = self.get_partition_prefix(target_date)
-        s3_key = f"{partition}/{s3_filename}"
+        R2_key = f"{partition}/{R2_filename}"
         
         try:
-            self.s3_client.head_object(Bucket=self.bucket_name, Key=s3_key)
+            self.R2_client.head_object(Bucket=self.bucket_name, Key=R2_key)
             return True
-        except self.s3_client.exceptions.NoSuchKey:
+        except self.R2_client.exceptions.NoSuchKey:
             return False
         except Exception as e:
             logger.warning(f"Error checking if file exists: {e}")
             return False
     
-    def get_file_size(self, s3_filename: str, target_date: datetime = None) -> Optional[int]:
+    def get_file_size(self, R2_filename: str, target_date: datetime = None) -> Optional[int]:
         """
-        Get the size of a file in S3
+        Get the size of a file in R2
         
         Args:
-            s3_filename: Filename in S3 (relative path without partition)
+            R2_filename: Filename in R2 (relative path without partition)
             target_date: Date for partitioning (defaults to yesterday)
         
         Returns:
             File size in bytes or None if error
         """
         partition = self.get_partition_prefix(target_date)
-        s3_key = f"{partition}/{s3_filename}"
+        R2_key = f"{partition}/{R2_filename}"
         
         try:
-            response = self.s3_client.head_object(Bucket=self.bucket_name, Key=s3_key)
+            response = self.R2_client.head_object(Bucket=self.bucket_name, Key=R2_key)
             return response['ContentLength']
         except Exception as e:
             logger.warning(f"Error getting file size: {e}")
@@ -320,7 +320,7 @@ class S3Helper:
                      target_date: datetime = None, listing_id: Optional[str] = None, 
                      image_index: int = 0) -> Optional[str]:
         """
-        Upload image bytes to S3 with ID-based naming
+        Upload image bytes to R2 with ID-based naming
         
         Args:
             image_url: Original image URL
@@ -331,7 +331,7 @@ class S3Helper:
             image_index: Index of image in the list (0, 1, 2, etc.)
         
         Returns:
-            Full S3 path or None if failed
+            Full R2 path or None if failed
         """
         try:
             # Generate filename based on listing_id if provided
@@ -344,22 +344,22 @@ class S3Helper:
                     filename = f"image_{int(__import__('time').time())}.jpg"
             
             partition = self.get_partition_prefix(target_date)
-            s3_key = f"{partition}/images/{subcategory_slug}/{filename}"
+            R2_key = f"{partition}/images/{subcategory_slug}/{filename}"
             
             logger.info(f"Uploading image: {filename}")
-            logger.info(f"Full R2 path: r2://{self.bucket_name}/{s3_key}")
+            logger.info(f"Full R2 path: r2://{self.bucket_name}/{R2_key}")
             
             for attempt in range(3):
                 try:
-                    self.s3_client.put_object(
+                    self.R2_client.put_object(
                         Bucket=self.bucket_name,
-                        Key=s3_key,
+                        Key=R2_key,
                         Body=image_data,
                         ContentType='image/jpeg'
                     )
                     
                     logger.info(f"✓ Successfully uploaded: {filename}")
-                    return s3_key
+                    return R2_key
                     
                 except Exception as e:
                     logger.warning(f"Image upload attempt {attempt + 1} failed: {e}")
@@ -373,15 +373,15 @@ class S3Helper:
             logger.error(f"Error uploading image {image_url}: {e}")
             return None
     
-    def generate_s3_url(self, s3_key: str) -> str:
+    def generate_R2_url(self, R2_key: str) -> str:
         """
-        Generate public S3 URL for a key
+        Generate public R2 URL for a key
         
         Args:
-            s3_key: S3 object key
+            R2_key: R2 object key
         
         Returns:
-            Full S3 URL
+            Full R2 URL
         """
         _ep = CF_R2_ENDPOINT_URL.rstrip("/").removesuffix("/" + self.bucket_name)
-        return f"{_ep}/{self.bucket_name}/{s3_key}"
+        return f"{_ep}/{self.bucket_name}/{R2_key}"

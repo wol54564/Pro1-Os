@@ -1,0 +1,35 @@
+name: "Fix — Double Bucket Paths"
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (preview only, no changes)'
+        type: boolean
+        default: true
+
+jobs:
+  fix:
+    name: Fix double-bucket R2 paths
+    runs-on: ubuntu-22.04
+    env:
+      CF_R2_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+      CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+      CF_R2_ENDPOINT_URL: ${{ secrets.CF_R2_ENDPOINT_URL }}
+      CF_R2_BUCKET_NAME: ${{ secrets.CF_R2_BUCKET_NAME }}
+      DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install boto3 botocore
+
+      - name: Run fix_double_bucket_paths.py
+        run: python CFl_data/fix_double_bucket_paths.py

@@ -59,14 +59,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r CFl_data/requirements.txt
 
-      - name: "[1/4] Property"
-        run: cd CFl_data/Property && python main.py
-
-      - name: "[2/4] New Car"
+      - name: "[1/4] New Car"
         run: cd "CFl_data/New Car" && python main.py
 
-      - name: "[3/4] Rest-Automotive-Part1"
+      - name: "[2/4] Rest-Automotive-Part1"
         run: cd CFl_data/Rest-Automotive-Part1 && python main.py
 
-      - name: "[4/4] Jobs"
+      - name: "[3/4] Jobs"
         run: cd CFl_data/Jobs && python main.py

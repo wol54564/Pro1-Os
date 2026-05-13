@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import pandas as pd
 import json
 import logging
@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional
 from json_scraper import RestAutomotiveJsonScraper
-from R2_helper import R2Helper
+from s3_helper import R2Helper
 
 logging.basicConfig(
     level=logging.INFO,
@@ -115,7 +115,7 @@ class RestAutomotiveScraperOrchestrator:
                                     if R2_path:
                                         R2_url = self.R2_helper.generate_R2_url(R2_path)
                                         R2_image_urls.append(R2_url)
-                                        logger.info(f"  Image {img_index}: {listing_id}_{img_index}.jpg ✓")
+                                        logger.info(f"  Image {img_index}: {listing_id}_{img_index}.jpg ?")
                                 
                                 await asyncio.sleep(0.1)
                             except Exception as e:
@@ -127,7 +127,7 @@ class RestAutomotiveScraperOrchestrator:
                         logger.info(f"Successfully uploaded {len(R2_image_urls)} images")
                     
                     detailed_listings.append(details)
-                    logger.debug(f"✓ Retrieved details for {slug}")
+                    logger.debug(f"? Retrieved details for {slug}")
                 else:
                     logger.warning(f"Failed to get details for {slug}")
                 
@@ -358,7 +358,7 @@ class RestAutomotiveScraperOrchestrator:
                             "R2_path": R2_excel_path,
                             "R2_url": R2_url
                         })
-                        logger.info(f"✓ Uploaded: {category_filename}.xlsx ({total_listings_in_cat} listings across {len(subcategories)} subcategories)")
+                        logger.info(f"? Uploaded: {category_filename}.xlsx ({total_listings_in_cat} listings across {len(subcategories)} subcategories)")
                     
                     temp_excel.unlink(missing_ok=True)
             
@@ -406,7 +406,7 @@ class RestAutomotiveScraperOrchestrator:
             
             if R2_json_path:
                 upload_summary["json_files"].append(R2_json_path)
-                logger.info(f"✓ Uploaded JSON summary")
+                logger.info(f"? Uploaded JSON summary")
             
             temp_json.unlink(missing_ok=True)
             

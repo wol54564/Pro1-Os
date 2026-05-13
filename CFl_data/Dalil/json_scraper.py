@@ -1,4 +1,4 @@
-﻿import json
+import json
 import asyncio
 import aiohttp
 import logging
@@ -102,7 +102,7 @@ class DalilJsonScraper:
                             logger.debug(f"JSON-LD script #{i+1} @type: {script_type}")
                             
                             if script_type == target_type:
-                                logger.debug(f"✓ Found JSON-LD with @type: {target_type}")
+                                logger.debug(f"? Found JSON-LD with @type: {target_type}")
                                 return data
                         except json.JSONDecodeError as e:
                             logger.debug(f"JSON-LD script #{i+1}: Invalid JSON - {e}")
@@ -734,7 +734,7 @@ class DalilJsonScraper:
         category_data["businesses"] = businesses_with_details
         category_data["total_scraped"] = len(businesses_with_details)
         
-        logger.info(f"✓ Category {category_slug}: Scraped {len(businesses_with_details)} businesses")
+        logger.info(f"? Category {category_slug}: Scraped {len(businesses_with_details)} businesses")
         
         return category_data
     

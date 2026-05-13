@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import pandas as pd
 import json
 import logging
@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional
 from json_scraper import AutomotiveServicesJsonScraper
-from R2_helper import R2Helper
+from s3_helper import R2Helper
 from io import BytesIO
 
 logging.basicConfig(
@@ -145,7 +145,7 @@ class AutomotiveServicesScraperOrchestrator:
                                 if R2_path:
                                     R2_url = self.R2_helper.generate_R2_url(R2_path)
                                     R2_image_urls.append(R2_url)
-                                    logger.info(f"      Image {img_index}: {listing_id}_{img_index}.jpg ✓")
+                                    logger.info(f"      Image {img_index}: {listing_id}_{img_index}.jpg ?")
                             
                             await asyncio.sleep(0.1)
                         except Exception as e:
@@ -312,7 +312,7 @@ class AutomotiveServicesScraperOrchestrator:
                         # Write to sheet
                         df.to_excel(writer, sheet_name=sheet_name, index=False)
             
-            logger.info(f"✓ Excel file created successfully: {output_file}")
+            logger.info(f"? Excel file created successfully: {output_file}")
             return output_file
             
         except Exception as e:
@@ -339,7 +339,7 @@ class AutomotiveServicesScraperOrchestrator:
             
             if R2_key:
                 R2_url = self.R2_helper.generate_R2_url(R2_key)
-                logger.info(f"✓ Excel file Uploaded to R2: {R2_url}")
+                logger.info(f"? Excel file Uploaded to R2: {R2_url}")
                 return R2_key
             else:
                 logger.error("Failed to upload Excel file to R2")
@@ -406,7 +406,7 @@ class AutomotiveServicesScraperOrchestrator:
             await self.upload_excel_to_R2(excel_path)
             
             logger.info("\n" + "="*60)
-            logger.info("✓ ALL TASKS COMPLETED SUCCESSFULLY!")
+            logger.info("? ALL TASKS COMPLETED SUCCESSFULLY!")
             logger.info("="*60)
             
         except Exception as e:

@@ -1,4 +1,4 @@
-﻿import json
+import json
 import asyncio
 import aiohttp
 import logging
@@ -315,7 +315,7 @@ class BikesJsonScraper:
                 else:
                     # For other string types, treat as boolean
                     value_en = "Yes" if val == "1" else "No"
-                    value_ar = "نعم" if val == "1" else "لا"
+                    value_ar = "???" if val == "1" else "??"
             else:
                 continue
             

@@ -1,4 +1,4 @@
-﻿import json
+import json
 import asyncio
 import aiohttp
 import logging
@@ -21,7 +21,7 @@ class EducationJsonScraper:
     Scrapes Q84Sale education listings using JSON data from __NEXT_DATA__ script tag
     Handles two cases:
     - Case 1: Categories with direct listings (e.g., school-supplies)
-    - Case 2: Categories with child categories (e.g., languages → arabic-teaching, english-teaching, etc.)
+    - Case 2: Categories with child categories (e.g., languages ? arabic-teaching, english-teaching, etc.)
     """
     
     def __init__(self):

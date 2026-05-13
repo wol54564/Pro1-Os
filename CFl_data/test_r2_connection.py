@@ -1,4 +1,4 @@
-﻿"""
+"""
 Cloudflare R2 connection test.
 
 Checks:
@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 import boto3
 from botocore.config import Config
 
-# ── Env vars ──────────────────────────────────────────────────────────────────
+# -- Env vars ------------------------------------------------------------------
 
 REQUIRED_VARS = [
     "CF_R2_ACCESS_KEY_ID",
@@ -45,13 +45,13 @@ def check_env() -> bool:
     print("[OK]   All required environment variables are set")
     for v in REQUIRED_VARS:
         val = os.environ[v]
-        # Mask secret values — show only first 6 chars
+        # Mask secret values � show only first 6 chars
         display = val[:6] + "***" if "KEY" in v or "SECRET" in v else val
         print(f"         {v} = {display}")
     return True
 
 
-# ── R2 client ─────────────────────────────────────────────────────────────────
+# -- R2 client -----------------------------------------------------------------
 
 def build_client():
     return boto3.client(
@@ -67,20 +67,20 @@ def build_client():
     )
 
 
-# ── Individual checks ─────────────────────────────────────────────────────────
+# -- Individual checks ---------------------------------------------------------
 
 def check_head_bucket(client, bucket: str) -> bool:
     """
-    HeadBucket is non-fatal on R2 — object-scoped API tokens often return 404
+    HeadBucket is non-fatal on R2 � object-scoped API tokens often return 404
     even when the bucket is fully accessible for PUT/GET.
     Returns True always; a hard failure here would be a false negative.
     """
     try:
         client.head_bucket(Bucket=bucket)
-        print(f"[OK]   HeadBucket — bucket '{bucket}' exists and is accessible")
+        print(f"[OK]   HeadBucket � bucket '{bucket}' exists and is accessible")
     except Exception as e:
         print(f"[WARN] HeadBucket returned an error (common with R2 object-scoped tokens): {e}")
-        print(f"         This is NOT a blocker — PUT/GET/DELETE will confirm real access below.")
+        print(f"         This is NOT a blocker � PUT/GET/DELETE will confirm real access below.")
     return True  # always non-fatal
 
 
@@ -91,7 +91,7 @@ def check_put_object(client, bucket: str, key: str) -> bool:
     })
     try:
         client.put_object(Bucket=bucket, Key=key, Body=payload, ContentType="application/json")
-        print(f"[OK]   PutObject — uploaded '{key}'")
+        print(f"[OK]   PutObject � uploaded '{key}'")
         return True
     except Exception as e:
         print(f"[FAIL] PutObject error: {e}")
@@ -103,7 +103,7 @@ def check_get_object(client, bucket: str, key: str) -> bool:
         resp = client.get_object(Bucket=bucket, Key=key)
         body = resp["Body"].read().decode("utf-8")
         data = json.loads(body)
-        print(f"[OK]   GetObject — read back '{key}' (timestamp: {data.get('timestamp', '?')})")
+        print(f"[OK]   GetObject � read back '{key}' (timestamp: {data.get('timestamp', '?')})")
         return True
     except Exception as e:
         print(f"[FAIL] GetObject error: {e}")
@@ -118,24 +118,24 @@ def check_list_objects(client, bucket: str, prefix: str) -> bool:
     try:
         resp = client.list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=5)
         count = resp.get("KeyCount", 0)
-        print(f"[OK]   ListObjectsV2 — found {count} object(s) under prefix '{prefix}'")
+        print(f"[OK]   ListObjectsV2 � found {count} object(s) under prefix '{prefix}'")
     except Exception as e:
         print(f"[WARN] ListObjectsV2 failed (r2:list permission may not be granted): {e}")
-        print(f"         This is NOT a blocker — scrapers only need PUT/GET/DELETE.")
+        print(f"         This is NOT a blocker � scrapers only need PUT/GET/DELETE.")
     return True  # always non-fatal
 
 
 def check_delete_object(client, bucket: str, key: str) -> bool:
     try:
         client.delete_object(Bucket=bucket, Key=key)
-        print(f"[OK]   DeleteObject — removed test object '{key}'")
+        print(f"[OK]   DeleteObject � removed test object '{key}'")
         return True
     except Exception as e:
         print(f"[FAIL] DeleteObject error: {e}")
         return False
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# -- Main ----------------------------------------------------------------------
 
 def main() -> int:
     print("=" * 60)
@@ -162,7 +162,7 @@ def main() -> int:
         print(f"[FAIL] Could not build boto3 client: {e}")
         return 1
 
-    # 3–7. Run checks
+    # 3�7. Run checks
     results.append(check_head_bucket(client, bucket))
     results.append(check_put_object(client, bucket, test_key))
     results.append(check_get_object(client, bucket, test_key))
@@ -174,10 +174,10 @@ def main() -> int:
     total = len(results)
     print("=" * 60)
     if all(results):
-        print(f"  RESULT: ALL {total} CHECKS PASSED ✓")
+        print(f"  RESULT: ALL {total} CHECKS PASSED ?")
         print("  Cloudflare R2 is correctly configured.")
     else:
-        print(f"  RESULT: {passed}/{total} CHECKS PASSED — SEE FAILURES ABOVE")
+        print(f"  RESULT: {passed}/{total} CHECKS PASSED � SEE FAILURES ABOVE")
     print("=" * 60)
 
     return 0 if all(results) else 1

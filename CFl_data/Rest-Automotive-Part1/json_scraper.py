@@ -1,4 +1,4 @@
-﻿import json
+import json
 import asyncio
 import aiohttp
 import logging
@@ -29,31 +29,31 @@ class RestAutomotiveJsonScraper:
             {
                 "slug": "watercraft",
                 "name_en": "Watercraft",
-                "name_ar": "المركبات المائية",
+                "name_ar": "???????? ???????",
                 "url": "https://www.q84sale.com/ar/automotive/watercraft/1"
             },
             {
                 "slug": "spare-parts",
                 "name_en": "Spare Parts",
-                "name_ar": "قطع الغيار",
+                "name_ar": "??? ??????",
                 "url": "https://www.q84sale.com/ar/automotive/spare-parts/1"
             },
             {
                 "slug": "automotive-accessories",
                 "name_en": "Automotive Accessories",
-                "name_ar": "إكسسوارات سيارات",
+                "name_ar": "????????? ??????",
                 "url": "https://www.q84sale.com/ar/automotive/automotive-accessories/1"
             },
             {
                 "slug": "cmvs",
                 "name_en": "CMVs",
-                "name_ar": "المركبات التجارية",
+                "name_ar": "???????? ????????",
                 "url": "https://www.q84sale.com/ar/automotive/cmvs/1"
             },
             {
                 "slug": "rentals",
                 "name_en": "Rentals",
-                "name_ar": "تأجير",
+                "name_ar": "?????",
                 "url": "https://www.q84sale.com/ar/automotive/rentals/1"
             }
         ]
@@ -288,7 +288,7 @@ class RestAutomotiveJsonScraper:
                 else:
                     # For other string types, treat as boolean
                     value_en = "Yes" if val == "1" else "No"
-                    value_ar = "نعم" if val == "1" else "لا"
+                    value_ar = "???" if val == "1" else "??"
             else:
                 continue
             

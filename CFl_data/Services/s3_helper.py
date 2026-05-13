@@ -1,4 +1,4 @@
-﻿import boto3
+import boto3
 import logging
 import os
 from pathlib import Path
@@ -174,7 +174,7 @@ class R2Helper:
                         ContentType='image/jpeg'
                     )
                     
-                    logger.info(f"✓ Successfully uploaded: {filename}")
+                    logger.info(f"? Successfully uploaded: {filename}")
                     return R2_key
                     
                 except Exception as e:

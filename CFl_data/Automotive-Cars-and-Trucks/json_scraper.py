@@ -1,4 +1,4 @@
-﻿import json
+import json
 import asyncio
 import aiohttp
 import logging
@@ -29,19 +29,19 @@ class AutomotiveJsonScraper:
             {
                 "slug": "classic-cars",
                 "name_en": "Classic Cars",
-                "name_ar": "سيارات كلاسيكية",
+                "name_ar": "?????? ????????",
                 "url": "https://www.q84sale.com/ar/automotive/classic-cars"
             },
             {
                 "slug": "junk-cars",
                 "name_en": "Junk Cars",
-                "name_ar": "سيارات معطوبة",
+                "name_ar": "?????? ??????",
                 "url": "https://www.q84sale.com/ar/automotive/junk-cars"
             },
             {
                 "slug": "food-trucks",
                 "name_en": "Food Trucks",
-                "name_ar": "عربات طعام",
+                "name_ar": "????? ????",
                 "url": "https://www.q84sale.com/ar/automotive/food-trucks"
             }
         ]
@@ -318,7 +318,7 @@ class AutomotiveJsonScraper:
                 else:
                     # For other string types, treat as boolean
                     value_en = "Yes" if val == "1" else "No"
-                    value_ar = "نعم" if val == "1" else "لا"
+                    value_ar = "???" if val == "1" else "??"
             else:
                 continue
             

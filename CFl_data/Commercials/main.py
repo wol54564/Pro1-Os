@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import pandas as pd
 import json
 import logging
@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
 from json_scraper import CommercialsJsonScraper
-from R2_helper import R2Helper
+from s3_helper import R2Helper
 
 logging.basicConfig(
     level=logging.INFO,
@@ -116,7 +116,7 @@ class CommercialsScraperOrchestrator:
                                 
                                 if R2_path:
                                     R2_image_path = self.R2_helper.generate_R2_url(R2_path)
-                                    logger.info(f"  ✓ Image uploaded: {R2_image_path}")
+                                    logger.info(f"  ? Image uploaded: {R2_image_path}")
                             
                             await asyncio.sleep(0.1)
                             
@@ -181,7 +181,7 @@ class CommercialsScraperOrchestrator:
                 
                 await asyncio.sleep(1)  # Rate limiting between pages
             
-            logger.info(f"\n✓ Category {category_name}: Total {len(all_ads)} ads collected")
+            logger.info(f"\n? Category {category_name}: Total {len(all_ads)} ads collected")
             
             return {
                 "category": category,
@@ -239,7 +239,7 @@ class CommercialsScraperOrchestrator:
             filepath = self.temp_dir / filename
             
             df.to_excel(filepath, index=False, engine='openpyxl')
-            logger.info(f"✓ Saved {len(ads)} ads to {filepath}")
+            logger.info(f"? Saved {len(ads)} ads to {filepath}")
             
             return str(filepath)
             
@@ -271,7 +271,7 @@ class CommercialsScraperOrchestrator:
             
             if R2_path:
                 R2_url = self.R2_helper.generate_R2_url(R2_path)
-                logger.info(f"✓ Uploaded Excel to: {R2_url}")
+                logger.info(f"? Uploaded Excel to: {R2_url}")
                 return R2_url
             else:
                 logger.error(f"Failed to upload Excel file to R2")
@@ -325,7 +325,7 @@ class CommercialsScraperOrchestrator:
                     "excel_R2_url": R2_url
                 })
                 
-                logger.info(f"\n✓ Completed: {category['name']} - {category_data['total_ads']} ads")
+                logger.info(f"\n? Completed: {category['name']} - {category_data['total_ads']} ads")
             
             # Print summary
             logger.info("\n" + "="*60)

@@ -1,4 +1,4 @@
-﻿import json
+import json
 import asyncio
 import aiohttp
 import logging
@@ -29,12 +29,12 @@ class OthersJsonScraper:
         
         # Define subcategories manually based on provided URLs
         self.subcategories = [
-            {"slug": "currencies-stamps-and-antiques", "name_ar": "عملات و طوابع و تحف قديمه", "name_en": "Currencies, Stamps & Antiques"},
-            {"slug": "books", "name_ar": "كتب", "name_en": "Books"},
-            {"slug": "wholesale", "name_ar": "بيع بالجملة", "name_en": "Wholesale"},
-            {"slug": "stickers", "name_ar": "ملصقات", "name_en": "Stickers"},
-            {"slug": "lost-and-found", "name_ar": "مفقودات و لقطات", "name_en": "Lost and Found"},
-            {"slug": "other-miscellaneous", "name_ar": "منوعات أخرى", "name_en": "Other Miscellaneous"}
+            {"slug": "currencies-stamps-and-antiques", "name_ar": "????? ? ????? ? ??? ?????", "name_en": "Currencies, Stamps & Antiques"},
+            {"slug": "books", "name_ar": "???", "name_en": "Books"},
+            {"slug": "wholesale", "name_ar": "??? ???????", "name_en": "Wholesale"},
+            {"slug": "stickers", "name_ar": "??????", "name_en": "Stickers"},
+            {"slug": "lost-and-found", "name_ar": "??????? ? ?????", "name_en": "Lost and Found"},
+            {"slug": "other-miscellaneous", "name_ar": "?????? ????", "name_en": "Other Miscellaneous"}
         ]
         
     async def init_browser(self):
@@ -225,7 +225,7 @@ class OthersJsonScraper:
                 else:
                     # For other string types, treat as boolean
                     value_en = "Yes" if val == "1" else "No"
-                    value_ar = "نعم" if val == "1" else "لا"
+                    value_ar = "???" if val == "1" else "??"
             else:
                 continue
             

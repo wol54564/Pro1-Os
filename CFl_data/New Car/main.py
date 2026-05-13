@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import pandas as pd
 import boto3
 import io

@@ -1,4 +1,4 @@
-﻿import boto3
+import boto3
 import logging
 import os
 from pathlib import Path
@@ -119,7 +119,7 @@ class R2Helper:
                     ExtraArgs={'ContentType': content_type}
                 )
                 
-                logger.info(f"✓ Uploaded to R2: {R2_key}")
+                logger.info(f"? Uploaded to R2: {R2_key}")
                 return R2_key
                 
             except Exception as e:

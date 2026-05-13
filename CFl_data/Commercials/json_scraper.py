@@ -1,4 +1,4 @@
-﻿import json
+import json
 import asyncio
 import logging
 import requests
@@ -239,7 +239,7 @@ class CommercialsJsonScraper:
                 "url": url,
             }
             
-            logger.info(f"✓ Retrieved details for ad {ad_id} - {formatted_details['title']}")
+            logger.info(f"? Retrieved details for ad {ad_id} - {formatted_details['title']}")
             return formatted_details
             
         except Exception as e:

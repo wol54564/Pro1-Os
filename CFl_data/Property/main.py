@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import pandas as pd
 from datetime import datetime, timedelta
 import json
@@ -202,7 +202,7 @@ async def scrape_subcategory(subcat):
 
                 page_no += 1
     # ---------------------------------------------------
-    # CASE 3: DIRECT LISTINGS (exchange, international…)
+    # CASE 3: DIRECT LISTINGS (exchange, international�)
     # ---------------------------------------------------
     else:
         total_pages = page_props.get("totalPages", 1)
@@ -255,7 +255,7 @@ async def scrape_subcategory(subcat):
     with open(temp_file, "rb") as f:
         await R2.upload_fileobj(f, excel_path)
 
-    logger.info(f"✓ {slug} saved to R2 with {len(set(r['sheet'] for r in results))} sheets")
+    logger.info(f"? {slug} saved to R2 with {len(set(r['sheet'] for r in results))} sheets")
 
 
 async def main():

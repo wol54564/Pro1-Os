@@ -1,4 +1,4 @@
-﻿import json
+import json
 import asyncio
 import aiohttp
 import logging
@@ -295,7 +295,7 @@ class ServicesJsonScraper:
                 "status": status,  # Status from listings page
             }
             
-            logger.debug(f"✓ Successfully extracted all details from {url}")
+            logger.debug(f"? Successfully extracted all details from {url}")
             return base_info
             
         except Exception as e:

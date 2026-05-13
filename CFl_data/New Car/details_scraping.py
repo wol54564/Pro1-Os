@@ -1,4 +1,4 @@
-﻿import json
+import json
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
@@ -79,7 +79,7 @@ class DetailsScraping:
 
             if isinstance(val, str):
                 value_en = "Yes" if val == "1" else "No"
-                value_ar = "نعم" if val == "1" else "لا"
+                value_ar = "???" if val == "1" else "??"
             elif isinstance(val, dict):
                 value_en = val.get("name_en")
                 value_ar = val.get("name_ar")

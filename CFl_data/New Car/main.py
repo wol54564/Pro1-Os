@@ -5,6 +5,7 @@ import io
 import json
 import re
 import logging
+import os
 import requests
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -28,7 +29,20 @@ class MainScraper:
     def __init__(self, url, R2_bucket):
         self.url = url
         self.R2_bucket = R2_bucket
-        self.R2_client = boto3.client("R2")
+        CF_R2_ACCESS_KEY = os.getenv('CF_R2_ACCESS_KEY_ID')
+        CF_R2_SECRET_KEY = os.getenv('CF_R2_SECRET_ACCESS_KEY')
+        CF_R2_ENDPOINT_URL = os.getenv('CF_R2_ENDPOINT_URL')
+        if not CF_R2_ACCESS_KEY or not CF_R2_SECRET_KEY:
+            raise ValueError("CF_R2_ACCESS_KEY_ID and CF_R2_SECRET_ACCESS_KEY environment variables must be set")
+        if not CF_R2_ENDPOINT_URL:
+            raise ValueError("CF_R2_ENDPOINT_URL environment variable must be set")
+        self.R2_client = boto3.client(
+            's3',
+            endpoint_url=CF_R2_ENDPOINT_URL.rstrip("/").removesuffix("/" + R2_bucket),
+            aws_access_key_id=CF_R2_ACCESS_KEY,
+            aws_secret_access_key=CF_R2_SECRET_KEY,
+            region_name='auto'
+        )
         self.chunk_size = 3
         self.chunk_delay = 5
         self.yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")

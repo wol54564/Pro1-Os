@@ -178,27 +178,30 @@ class ElectronicsScraperOrchestrator:
             else:
                 category_path = f"{parent_slug}/{child_slug}"
             
+            yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
             while True:
                 listings, total_pages = await self.scraper.get_listings(
                     category_path,
                     page_num=page_num,
-                    filter_yesterday=True
+                    filter_yesterday=False
                 )
                 
                 if not listings:
                     logger.info(f"No listings found on page {page_num}, stopping pagination")
                     break
                 
-                logger.info(f"Fetching detailed information for {len(listings)} listings on page {page_num}/{total_pages}...")
-                detailed_listings = await self.fetch_listing_details_batch(listings, category_path)
-                child_listings.extend(detailed_listings)
+                yesterday_listings = [l for l in listings if l.get("date_published", "").startswith(yesterday)]
+                found_older = any(l.get("date_published", "")[:10] < yesterday for l in listings if l.get("date_published", ""))
                 
-                page_num += 1
+                if yesterday_listings:
+                    logger.info(f"Fetching detailed information for {len(yesterday_listings)} listings on page {page_num}/{total_pages}...")
+                    detailed_listings = await self.fetch_listing_details_batch(yesterday_listings, category_path)
+                    child_listings.extend(detailed_listings)
                 
-                if page_num > total_pages:
-                    logger.info(f"Reached total pages ({total_pages})")
+                if found_older or page_num >= total_pages:
                     break
                 
+                page_num += 1
                 await asyncio.sleep(1)
             
             result["listings"] = child_listings
@@ -244,21 +247,26 @@ class ElectronicsScraperOrchestrator:
                 page_num = 1
                 main_listings = []
                 total_pages = 0
+                yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
                 
                 while True:
-                    listings, total_pages = await self.scraper.get_listings(main_slug, page_num=page_num, filter_yesterday=True)
+                    listings, total_pages = await self.scraper.get_listings(main_slug, page_num=page_num, filter_yesterday=False)
                     
                     if not listings:
                         break
                     
-                    logger.info(f"Fetching details for {len(listings)} listings on page {page_num}/{total_pages}...")
-                    detailed_listings = await self.fetch_listing_details_batch(listings, main_slug)
-                    main_listings.extend(detailed_listings)
+                    yesterday_listings = [l for l in listings if l.get("date_published", "").startswith(yesterday)]
+                    found_older = any(l.get("date_published", "")[:10] < yesterday for l in listings if l.get("date_published", ""))
                     
-                    page_num += 1
-                    if page_num > total_pages:
+                    if yesterday_listings:
+                        logger.info(f"Fetching details for {len(yesterday_listings)} listings on page {page_num}/{total_pages}...")
+                        detailed_listings = await self.fetch_listing_details_batch(yesterday_listings, main_slug)
+                        main_listings.extend(detailed_listings)
+                    
+                    if found_older or page_num >= total_pages:
                         break
                     
+                    page_num += 1
                     await asyncio.sleep(1)
                 
                 # For Case 3, create a single entry with all listings

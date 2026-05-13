@@ -168,15 +168,21 @@ class RestAutomotiveScraperOrchestrator:
         
         try:
             # Fetch listings for this business (business listings are typically single page)
+            yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
             listings, total_pages = await self.scraper.get_business_listings(
                 business_slug, 
                 category_type,
                 page_num=1,
-                filter_yesterday=True
+                filter_yesterday=False
             )
             
             if not listings:
                 logger.info(f"No listings found for {business_name}")
+                return result
+            
+            listings = [l for l in listings if l.get("date_published", "").startswith(yesterday)]
+            if not listings:
+                logger.info(f"No yesterday's listings found for {business_name}")
                 return result
             
             logger.info(f"Fetching detailed information for {len(listings)} listings...")
@@ -217,29 +223,31 @@ class RestAutomotiveScraperOrchestrator:
             page_num = 1
             subcat_listings = []
             total_pages = 0
+            yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
             
             while True:
                 listings, total_pages = await self.scraper.get_rental_listings(
                     subcat_slug, 
                     page_num=page_num,
-                    filter_yesterday=True
+                    filter_yesterday=False
                 )
                 
                 if not listings:
                     logger.info(f"No listings found on page {page_num}, stopping pagination")
                     break
                 
-                logger.info(f"Fetching detailed information for {len(listings)} listings on page {page_num}/{total_pages}...")
-                detailed_listings = await self.fetch_listing_details_batch(listings, subcat_slug, "car-rental")
-                subcat_listings.extend(detailed_listings)
+                yesterday_listings = [l for l in listings if l.get("date_published", "").startswith(yesterday)]
+                found_older = any(l.get("date_published", "")[:10] < yesterday for l in listings if l.get("date_published", ""))
                 
-                page_num += 1
+                if yesterday_listings:
+                    logger.info(f"Fetching detailed information for {len(yesterday_listings)} listings on page {page_num}/{total_pages}...")
+                    detailed_listings = await self.fetch_listing_details_batch(yesterday_listings, subcat_slug, "car-rental")
+                    subcat_listings.extend(detailed_listings)
                 
-                # Stop if we've reached the total pages
-                if page_num > total_pages:
-                    logger.info(f"Reached total pages ({total_pages})")
+                if found_older or page_num >= total_pages:
                     break
                 
+                page_num += 1
                 await asyncio.sleep(1)  # Rate limiting between pages
             
             result["listings"] = subcat_listings

@@ -164,22 +164,30 @@ class AutomotiveScraperOrchestrator:
                     
                     child_listings = []
                     page_num = 1
+                    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
                     
                     while page_num <= max_pages:
                         listings = await self.scraper.get_listings(
                             subcat_slug,
                             page_num=page_num,
                             child_slug=child_slug,
-                            filter_yesterday=True
+                            filter_yesterday=False
                         )
                         
                         if not listings:
                             logger.info(f"  No listings found on page {page_num} for {child['name_ar']}, stopping pagination")
                             break
                         
-                        logger.info(f"  Fetching detailed information for {len(listings)} listings on page {page_num}...")
-                        detailed_listings = await self.fetch_listing_details_batch(listings, subcat_slug)
-                        child_listings.extend(detailed_listings)
+                        yesterday_listings = [l for l in listings if l.get("date_published", "").startswith(yesterday)]
+                        found_older = any(l.get("date_published", "")[:10] < yesterday for l in listings if l.get("date_published", ""))
+                        
+                        if yesterday_listings:
+                            logger.info(f"  Fetching detailed information for {len(yesterday_listings)} listings on page {page_num}...")
+                            detailed_listings = await self.fetch_listing_details_batch(yesterday_listings, subcat_slug)
+                            child_listings.extend(detailed_listings)
+                        
+                        if found_older:
+                            break
                         
                         page_num += 1
                         await asyncio.sleep(1)  # Rate limiting between pages
@@ -196,20 +204,28 @@ class AutomotiveScraperOrchestrator:
                 # Fetch multiple pages for main category
                 page_num = 1
                 main_listings = []
+                yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
                 while page_num <= max_pages:
                     listings = await self.scraper.get_listings(
                         subcat_slug, 
                         page_num=page_num,
-                        filter_yesterday=True  # Get yesterday's listings for automotive
+                        filter_yesterday=False
                     )
                     
                     if not listings:
                         logger.info(f"No listings found on page {page_num}, stopping pagination")
                         break
                     
-                    logger.info(f"Fetching detailed information for {len(listings)} listings on page {page_num}...")
-                    detailed_listings = await self.fetch_listing_details_batch(listings, subcat_slug)
-                    main_listings.extend(detailed_listings)
+                    yesterday_listings = [l for l in listings if l.get("date_published", "").startswith(yesterday)]
+                    found_older = any(l.get("date_published", "")[:10] < yesterday for l in listings if l.get("date_published", ""))
+                    
+                    if yesterday_listings:
+                        logger.info(f"Fetching detailed information for {len(yesterday_listings)} listings on page {page_num}...")
+                        detailed_listings = await self.fetch_listing_details_batch(yesterday_listings, subcat_slug)
+                        main_listings.extend(detailed_listings)
+                    
+                    if found_older:
+                        break
                     
                     page_num += 1
                     await asyncio.sleep(2)  # Rate limiting between pages
@@ -246,6 +262,7 @@ class AutomotiveScraperOrchestrator:
                 
                 cat_listings = []
                 page_num = 1
+                yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
                 
                 # Scrape multiple pages for this category
                 while page_num <= max_pages:
@@ -253,18 +270,24 @@ class AutomotiveScraperOrchestrator:
                     listings = await self.scraper.get_listings(
                         cat_slug,
                         page_num=page_num,
-                        filter_yesterday=True
+                        filter_yesterday=False
                     )
                     
                     if not listings:
                         logger.info(f"No listings found on page {page_num}, stopping pagination")
                         break
                     
-                    logger.info(f"Found {len(listings)} listings on page {page_num}")
-                    logger.info(f"Fetching detailed information...")
+                    yesterday_listings = [l for l in listings if l.get("date_published", "").startswith(yesterday)]
+                    found_older = any(l.get("date_published", "")[:10] < yesterday for l in listings if l.get("date_published", ""))
                     
-                    detailed_listings = await self.fetch_listing_details_batch(listings, cat_slug)
-                    cat_listings.extend(detailed_listings)
+                    if yesterday_listings:
+                        logger.info(f"Found {len(yesterday_listings)} yesterday listings on page {page_num}")
+                        logger.info(f"Fetching detailed information...")
+                        detailed_listings = await self.fetch_listing_details_batch(yesterday_listings, cat_slug)
+                        cat_listings.extend(detailed_listings)
+                    
+                    if found_older:
+                        break
                     
                     page_num += 1
                     await asyncio.sleep(1)  # Rate limiting between pages

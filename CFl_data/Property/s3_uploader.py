@@ -14,7 +14,7 @@ class R2Uploader:
         cf_r2_endpoint = os.environ.get("CF_R2_ENDPOINT_URL")
         self.bucket_name = bucket_name
         self.R2 = boto3.client(
-            "R2",
+            "s3",
             endpoint_url=cf_r2_endpoint.rstrip("/").removesuffix("/" + bucket_name) if cf_r2_endpoint else cf_r2_endpoint,
             aws_access_key_id=cf_r2_access_key,
             aws_secret_access_key=cf_r2_secret_key,

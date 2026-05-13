@@ -29,19 +29,19 @@ class AutomotiveJsonScraper:
             {
                 "slug": "classic-cars",
                 "name_en": "Classic Cars",
-                "name_ar": "?????? ????????",
+                "name_ar": "سيارات كلاسيك",
                 "url": "https://www.q84sale.com/ar/automotive/classic-cars"
             },
             {
                 "slug": "junk-cars",
                 "name_en": "Junk Cars",
-                "name_ar": "?????? ??????",
+                "name_ar": "سيارات خردة",
                 "url": "https://www.q84sale.com/ar/automotive/junk-cars"
             },
             {
                 "slug": "food-trucks",
                 "name_en": "Food Trucks",
-                "name_ar": "????? ????",
+                "name_ar": "شاحنة طعام",
                 "url": "https://www.q84sale.com/ar/automotive/food-trucks"
             }
         ]

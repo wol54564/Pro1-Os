@@ -29,31 +29,31 @@ class RestAutomotiveJsonScraper:
             {
                 "slug": "watercraft",
                 "name_en": "Watercraft",
-                "name_ar": "???????? ???????",
+                "name_ar": "قوارب ومراكب",
                 "url": "https://www.q84sale.com/ar/automotive/watercraft/1"
             },
             {
                 "slug": "spare-parts",
                 "name_en": "Spare Parts",
-                "name_ar": "??? ??????",
+                "name_ar": "قطع غيار",
                 "url": "https://www.q84sale.com/ar/automotive/spare-parts/1"
             },
             {
                 "slug": "automotive-accessories",
                 "name_en": "Automotive Accessories",
-                "name_ar": "????????? ??????",
+                "name_ar": "اكسسوارات سيارات",
                 "url": "https://www.q84sale.com/ar/automotive/automotive-accessories/1"
             },
             {
                 "slug": "cmvs",
                 "name_en": "CMVs",
-                "name_ar": "???????? ????????",
+                "name_ar": "مركبات تجارية",
                 "url": "https://www.q84sale.com/ar/automotive/cmvs/1"
             },
             {
                 "slug": "rentals",
                 "name_en": "Rentals",
-                "name_ar": "?????",
+                "name_ar": "إيجار",
                 "url": "https://www.q84sale.com/ar/automotive/rentals/1"
             }
         ]

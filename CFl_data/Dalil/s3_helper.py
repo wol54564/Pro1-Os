@@ -46,7 +46,7 @@ class R2Helper:
             
             logger.info(f"Connecting to Cloudflare R2 endpoint: {CF_R2_ENDPOINT_URL}, bucket: {bucket_name}")
             self.R2_client = boto3.client(
-                'R2',
+                's3',
                 endpoint_url=CF_R2_ENDPOINT_URL.rstrip("/").removesuffix("/" + bucket_name),
                 aws_access_key_id=CF_R2_ACCESS_KEY,
                 aws_secret_access_key=CF_R2_SECRET_KEY,

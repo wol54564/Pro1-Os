@@ -1,0 +1,64 @@
+name: "Test — Used Car"
+
+on:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+
+  # ── Job 1: calculate today's geo (Account 2 rotation) ───────────────────────
+  calculate-geo:
+    name: Calculate geo rotation
+    runs-on: ubuntu-22.04
+    outputs:
+      geo: ${{ steps.geo.outputs.geo }}
+    steps:
+      - name: Determine geo from day-of-week
+        id: geo
+        run: |
+          DOW=$(date +%w)   # 0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat
+          if [ "$DOW" = "0" ]; then
+            GEO="kw"        # Sunday
+          elif [ $(( DOW % 2 )) = "1" ]; then
+            GEO="sa"        # Mon / Wed / Fri
+          else
+            GEO="eg"        # Tue / Thu / Sat
+          fi
+          echo "geo=$GEO" >> $GITHUB_OUTPUT
+          echo "====================================="
+          echo "Day=$DOW | Geo=__cr.$GEO"
+          echo "====================================="
+
+  # ── Job 2: scrape Used Car ───────────────────────────────────────────────────
+  scrape:
+    name: Scrape Used Car
+    needs: calculate-geo
+    runs-on: ubuntu-22.04
+    env:
+      DATAIMPULSE_USER: ${{ secrets.DATAIMPULSE_USER_2 }}__cr.${{ needs.calculate-geo.outputs.geo }}
+      DATAIMPULSE_PASS: ${{ secrets.DATAIMPULSE_PASS_2 }}
+      DATAIMPULSE_HOST: gw.dataimpulse.com
+      DATAIMPULSE_PORT: '823'
+      CF_R2_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+      CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+      CF_R2_ENDPOINT_URL: ${{ secrets.CF_R2_ENDPOINT_URL }}
+      CF_R2_BUCKET_NAME: ${{ secrets.CF_R2_BUCKET_NAME }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r CFl_data/requirements.txt
+          pip install -r "CFl_data/Used Car/requirements.txt"
+
+      - name: Scrape Used Car
+        run: cd "CFl_data/Used Car" && python main_used_cars.py

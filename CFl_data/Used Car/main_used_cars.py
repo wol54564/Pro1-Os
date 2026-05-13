@@ -157,28 +157,45 @@ class UsedCarsScraperOrchestrator:
         """
         all_listings = []
         page_num = 1
-        
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
         while True:
+            # Fetch WITHOUT filter_yesterday so we can inspect all dates on the page
+            # and decide correctly whether to continue or stop
             listings, total_pages = await self.scraper.get_listings(
-                main_category_slug, 
-                subcategory_slug, 
+                main_category_slug,
+                subcategory_slug,
                 page_num,
-                filter_yesterday=True
+                filter_yesterday=False
             )
-            
+
             if not listings:
                 logger.info(f"No more listings found for {main_category_slug}/{subcategory_slug}")
                 break
-            
-            all_listings.extend(listings)
-            logger.info(f"Fetched {len(listings)} listings from page {page_num}/{total_pages}")
-            
-            if page_num >= total_pages:
+
+            yesterday_listings = []
+            found_older = False
+            for listing in listings:
+                date_pub = listing.get("date_published", "")
+                if date_pub.startswith(yesterday):
+                    yesterday_listings.append(listing)
+                elif date_pub and date_pub[:10] < yesterday:
+                    # Listings are newest-first; once we see one older than yesterday
+                    # there are no more yesterday listings on subsequent pages
+                    found_older = True
+
+            all_listings.extend(yesterday_listings)
+            logger.info(
+                f"Page {page_num}/{total_pages}: {len(yesterday_listings)} yesterday listings "
+                f"(page total: {len(listings)})"
+            )
+
+            if found_older or page_num >= total_pages:
                 break
-            
+
             page_num += 1
             await asyncio.sleep(0.5)  # Be gentle with the server
-        
+
         return all_listings
     
     def format_listings_for_excel(self, listings: List[Dict]) -> List[Dict]:

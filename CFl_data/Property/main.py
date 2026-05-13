@@ -6,7 +6,7 @@ import logging
 import requests
 from bs4 import BeautifulSoup
 from details_scraping import PropertyDetailsScraper
-from R2_uploader import R2Uploader
+from s3_uploader import R2Uploader
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

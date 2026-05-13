@@ -202,7 +202,7 @@ async def scrape_subcategory(subcat):
 
                 page_no += 1
     # ---------------------------------------------------
-    # CASE 3: DIRECT LISTINGS (exchange, international…)
+    # CASE 3: DIRECT LISTINGS (exchange, international...)
     # ---------------------------------------------------
     else:
         total_pages = page_props.get("totalPages", 1)

@@ -193,7 +193,7 @@ class DalilScraperOrchestrator:
                 business["r2_images_paths"] = ""
                 business["r2_images_paths_json"] = "[]"
         
-        logger.info(f"? Completed image processing for {category_slug}")
+        logger.info(f"[OK] Completed image processing for {category_slug}")
     
     def create_excel_with_sheets(self, categories_data: List[Dict]) -> Path:
         """
@@ -251,7 +251,7 @@ class DalilScraperOrchestrator:
                 # Write to sheet
                 df.to_excel(writer, sheet_name=sheet_name, index=False)
                 
-                logger.info(f"  ? Sheet '{sheet_name}': {len(df)} businesses")
+                logger.info(f"  [OK] Sheet '{sheet_name}': {len(df)} businesses")
         
         logger.info(f"Excel file created: {excel_file}")
         return excel_file
@@ -338,7 +338,7 @@ class DalilScraperOrchestrator:
                     "R2_path": R2_excel_path,
                     "R2_url": self.R2_helper.generate_R2_url(R2_excel_path)
                 }
-                logger.info(f"? Uploaded Excel file: {R2_excel_path}")
+                logger.info(f"[OK] Uploaded Excel file: {R2_excel_path}")
             
             excel_file.unlink(missing_ok=True)
             
@@ -379,7 +379,7 @@ class DalilScraperOrchestrator:
                     "R2_path": R2_json_path,
                     "R2_url": self.R2_helper.generate_R2_url(R2_json_path)
                 }
-                logger.info(f"? Uploaded JSON summary: {R2_json_path}")
+                logger.info(f"[OK] Uploaded JSON summary: {R2_json_path}")
             
             temp_json.unlink(missing_ok=True)
             

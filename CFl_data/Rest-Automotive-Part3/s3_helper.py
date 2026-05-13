@@ -338,7 +338,7 @@ class R2Helper:
                         ContentType='image/jpeg'
                     )
                     
-                    logger.info(f"? Successfully uploaded: {filename}")
+                    logger.info(f"[OK] Successfully uploaded: {filename}")
                     return R2_key
                     
                 except Exception as e:

@@ -26,7 +26,7 @@ class R2Uploader:
             logger.info(f"Uploading file to R2: {R2_path}")
             self.R2.upload_fileobj(file_obj, self.bucket_name, R2_path, ExtraArgs={"ContentType": content_type})
             R2_url = f"r2://{self.bucket_name}/{R2_path}"
-            logger.info(f"? File uploaded successfully: {R2_url}")
+            logger.info(f"[OK] File uploaded successfully: {R2_url}")
             return R2_url
         except Exception as e:
             logger.error(f"Failed to upload file to R2 {R2_path}: {e}", exc_info=True)

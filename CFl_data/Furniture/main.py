@@ -116,7 +116,7 @@ class FurnitureScraperOrchestrator:
                                     if R2_path:
                                         R2_url = self.R2_helper.generate_R2_url(R2_path)
                                         R2_image_urls.append(R2_url)
-                                        logger.info(f"  Image {img_index}: {listing_id}_{img_index}.jpg ?")
+                                        logger.info(f"  Image {img_index}: {listing_id}_{img_index}.jpg [OK]")
                                 
                                 await asyncio.sleep(0.1)
                             except Exception as e:
@@ -128,7 +128,7 @@ class FurnitureScraperOrchestrator:
                         logger.info(f"Successfully uploaded {len(R2_image_urls)} images")
                     
                     detailed_listings.append(details)
-                    logger.debug(f"? Retrieved details for {slug}")
+                    logger.debug(f"[OK] Retrieved details for {slug}")
                 else:
                     logger.warning(f"Failed to get details for {slug}")
                 
@@ -457,7 +457,7 @@ class FurnitureScraperOrchestrator:
             
             if R2_excel_path:
                 R2_url = self.R2_helper.generate_R2_url(R2_excel_path)
-                logger.info(f"? Uploaded: {safe_filename}.xlsx ({result['total_listings']} listings)")
+                logger.info(f"[OK] Uploaded: {safe_filename}.xlsx ({result['total_listings']} listings)")
                 
                 temp_excel.unlink(missing_ok=True)
                 
@@ -543,7 +543,7 @@ class FurnitureScraperOrchestrator:
             
             if R2_json_path:
                 upload_summary["json_files"].append(R2_json_path)
-                logger.info(f"? Uploaded JSON summary")
+                logger.info(f"[OK] Uploaded JSON summary")
             
             temp_json.unlink(missing_ok=True)
             

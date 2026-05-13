@@ -116,7 +116,7 @@ class CommercialsScraperOrchestrator:
                                 
                                 if R2_path:
                                     R2_image_path = self.R2_helper.generate_R2_url(R2_path)
-                                    logger.info(f"  ? Image uploaded: {R2_image_path}")
+                                    logger.info(f"  [OK] Image uploaded: {R2_image_path}")
                             
                             await asyncio.sleep(0.1)
                             
@@ -181,7 +181,7 @@ class CommercialsScraperOrchestrator:
                 
                 await asyncio.sleep(1)  # Rate limiting between pages
             
-            logger.info(f"\n? Category {category_name}: Total {len(all_ads)} ads collected")
+            logger.info(f"\n[OK] Category {category_name}: Total {len(all_ads)} ads collected")
             
             return {
                 "category": category,
@@ -239,7 +239,7 @@ class CommercialsScraperOrchestrator:
             filepath = self.temp_dir / filename
             
             df.to_excel(filepath, index=False, engine='openpyxl')
-            logger.info(f"? Saved {len(ads)} ads to {filepath}")
+            logger.info(f"[OK] Saved {len(ads)} ads to {filepath}")
             
             return str(filepath)
             
@@ -271,7 +271,7 @@ class CommercialsScraperOrchestrator:
             
             if R2_path:
                 R2_url = self.R2_helper.generate_R2_url(R2_path)
-                logger.info(f"? Uploaded Excel to: {R2_url}")
+                logger.info(f"[OK] Uploaded Excel to: {R2_url}")
                 return R2_url
             else:
                 logger.error(f"Failed to upload Excel file to R2")
@@ -325,7 +325,7 @@ class CommercialsScraperOrchestrator:
                     "excel_R2_url": R2_url
                 })
                 
-                logger.info(f"\n? Completed: {category['name']} - {category_data['total_ads']} ads")
+                logger.info(f"\n[OK] Completed: {category['name']} - {category_data['total_ads']} ads")
             
             # Print summary
             logger.info("\n" + "="*60)

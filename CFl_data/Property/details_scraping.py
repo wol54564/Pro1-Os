@@ -45,7 +45,7 @@ class PropertyDetailsScraper:
                     result = await self._scrape_detail_page(self.listing_page_url, is_detail_page=True)
                     if result:
                         listings_data.append(result)
-                        logger.debug(f"? Extracted details from detail page")
+                        logger.debug(f"[OK] Extracted details from detail page")
                     return listings_data
 
             for idx, listing_summary in enumerate(listings):
@@ -71,9 +71,9 @@ class PropertyDetailsScraper:
                 if details:
                     details["pin"] = pin_status
                     listings_data.append(details)
-                    logger.debug(f"? Extracted details for listing: {slug}")
+                    logger.debug(f"[OK] Extracted details for listing: {slug}")
                 else:
-                    logger.debug(f"? Failed to extract details for listing: {slug}")
+                    logger.debug(f"[OK] Failed to extract details for listing: {slug}")
 
         except Exception as e:
             logger.error(f"Error scraping {self.listing_page_url}: {e}", exc_info=True)
@@ -140,7 +140,7 @@ class PropertyDetailsScraper:
                 "phone": listing.get("phone"),
             }
 
-            logger.debug(f"? Successfully extracted all details from {url}")
+            logger.debug(f"[OK] Successfully extracted all details from {url}")
             return {**base_info, **attributes}
 
         except Exception as e:

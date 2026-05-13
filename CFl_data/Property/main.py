@@ -255,7 +255,7 @@ async def scrape_subcategory(subcat):
     with open(temp_file, "rb") as f:
         await R2.upload_fileobj(f, excel_path)
 
-    logger.info(f"? {slug} saved to R2 with {len(set(r['sheet'] for r in results))} sheets")
+    logger.info(f"[OK] {slug} saved to R2 with {len(set(r['sheet'] for r in results))} sheets")
 
 
 async def main():

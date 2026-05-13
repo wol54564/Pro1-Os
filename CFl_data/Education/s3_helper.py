@@ -115,7 +115,7 @@ class R2Helper:
                         ExtraArgs={'ContentType': self._get_content_type(local_file_path)}
                     )
                 
-                logger.info(f"? Successfully uploaded: {R2_key}")
+                logger.info(f"[OK] Successfully uploaded: {R2_key}")
                 return R2_key
                 
             except Exception as e:
@@ -168,7 +168,7 @@ class R2Helper:
                 ContentType=f'image/{extension}'
             )
             
-            logger.debug(f"? Image uploaded: {R2_key}")
+            logger.debug(f"[OK] Image uploaded: {R2_key}")
             return R2_key
             
         except Exception as e:

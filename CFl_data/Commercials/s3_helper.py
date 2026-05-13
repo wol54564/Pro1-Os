@@ -132,7 +132,7 @@ class R2Helper:
                     ExtraArgs=extra_args
                 )
                 
-                logger.info(f"? Successfully uploaded to {R2_key}")
+                logger.info(f"[OK] Successfully uploaded to {R2_key}")
                 return R2_key
                 
             except Exception as e:
@@ -195,7 +195,7 @@ class R2Helper:
                 ContentType=content_type
             )
             
-            logger.debug(f"? Uploaded image to {R2_key}")
+            logger.debug(f"[OK] Uploaded image to {R2_key}")
             return R2_key
             
         except Exception as e:

@@ -112,7 +112,7 @@ class AutomotiveScraperOrchestrator:
                                     if R2_path:
                                         R2_url = self.R2_helper.generate_R2_url(R2_path)
                                         R2_image_urls.append(R2_url)
-                                        logger.info(f"  Image {img_index}: {listing_id}_{img_index}.jpg ?")
+                                        logger.info(f"  Image {img_index}: {listing_id}_{img_index}.jpg [OK]")
                                 
                                 await asyncio.sleep(0.1)
                             except Exception as e:
@@ -124,7 +124,7 @@ class AutomotiveScraperOrchestrator:
                         logger.info(f"Successfully uploaded {len(R2_image_urls)} images")
                     
                     detailed_listings.append(details)
-                    logger.debug(f"? Retrieved details for {slug}")
+                    logger.debug(f"[OK] Retrieved details for {slug}")
                 else:
                     logger.warning(f"Failed to get details for {slug}")
                 
@@ -280,7 +280,7 @@ class AutomotiveScraperOrchestrator:
                 all_results.append(result)
                 
                 if cat_listings:
-                    logger.info(f"? Total listings for {cat['name_ar']}: {len(cat_listings)}")
+                    logger.info(f"[OK] Total listings for {cat['name_ar']}: {len(cat_listings)}")
                 
                 if i < len(target_categories):
                     await asyncio.sleep(2)
@@ -358,7 +358,7 @@ class AutomotiveScraperOrchestrator:
                                 "R2_path": R2_excel_path,
                                 "R2_url": R2_url
                             })
-                            logger.info(f"? Uploaded: {slug}.xlsx ({listings_count} listings)")
+                            logger.info(f"[OK] Uploaded: {slug}.xlsx ({listings_count} listings)")
                         
                         temp_excel.unlink(missing_ok=True)
                 
@@ -400,7 +400,7 @@ class AutomotiveScraperOrchestrator:
             
             if R2_json_path:
                 upload_summary["json_files"].append(R2_json_path)
-                logger.info(f"? Uploaded JSON summary")
+                logger.info(f"[OK] Uploaded JSON summary")
             
             temp_json.unlink(missing_ok=True)
             

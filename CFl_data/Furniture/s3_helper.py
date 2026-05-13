@@ -119,7 +119,7 @@ class R2Helper:
                     ExtraArgs={'ContentType': content_type}
                 )
                 
-                logger.info(f"? Uploaded to R2: {R2_key}")
+                logger.info(f"[OK] Uploaded to R2: {R2_key}")
                 return R2_key
                 
             except Exception as e:

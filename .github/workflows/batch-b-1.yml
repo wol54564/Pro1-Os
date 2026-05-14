@@ -1,0 +1,89 @@
+name: "Batch B-1"
+
+
+
+on:
+  workflow_run:
+    workflows:
+      - "Batch A"
+    types:
+      - completed
+  workflow_dispatch:
+
+concurrency:
+  group: batch-pipeline
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PYTHONUTF8: '1'
+
+jobs:
+
+  # ── Job 1: calculate today's geo for Account 2 ──────────────────────────────
+  calculate-geo:
+    name: Calculate geo rotation (Account 2)
+    runs-on: ubuntu-22.04
+    outputs:
+      geo: ${{ steps.geo.outputs.geo }}
+    steps:
+      - name: Determine geo from day-of-week
+        id: geo
+        run: |
+          DOW=$(date +%w)   # 0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat
+          if [ "$DOW" = "0" ]; then
+            GEO="kw"        # Sunday
+          elif [ $(( DOW % 2 )) = "1" ]; then
+            GEO="sa"        # Mon / Wed / Fri
+          else
+            GEO="eg"        # Tue / Thu / Sat
+          fi
+          echo "geo=$GEO" >> $GITHUB_OUTPUT
+          echo "====================================="
+          echo "Account 2 | Day=$DOW | Geo=__cr.$GEO"
+          echo "====================================="
+
+  # ── Job 2: run Batch B-1 scraper ─────────────────────────────────────────────
+  scrape:
+    name: Scrape Batch B-1
+    needs: calculate-geo
+    runs-on: ubuntu-22.04
+    env:
+      DATAIMPULSE_USER: ${{ secrets.DATAIMPULSE_USER_2 }}__cr.${{ needs.calculate-geo.outputs.geo }}
+      DATAIMPULSE_PASS: ${{ secrets.DATAIMPULSE_PASS_2 }}
+      DATAIMPULSE_HOST: gw.dataimpulse.com
+      DATAIMPULSE_PORT: '823'
+      CF_R2_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+      CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+      CF_R2_ENDPOINT_URL: ${{ secrets.CF_R2_ENDPOINT_URL }}
+      CF_R2_BUCKET_NAME: ${{ secrets.CF_R2_BUCKET_NAME }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r CFl_data/requirements.txt
+
+      - name: Random gap after Batch A (25–45 min stealth pause)
+        run: |
+          DELAY=$((RANDOM % 1200 + 1500))
+          echo "Waiting ${DELAY}s (~$(( DELAY / 60 )) min) before starting Batch B-1..."
+          sleep $DELAY
+
+      - name: "[1/1] Used Car"
+        run: cd "CFl_data/Used Car" && python main_used_cars.py
+
+      - name: Batch B-1 summary
+        if: always()
+        run: |
+          echo "====================================="
+          echo "BATCH B-1 COMPLETE"
+          echo "Account : DATAIMPULSE_USER_2"
+          echo "Geo     : __cr.${{ needs.calculate-geo.outputs.geo }}"
+          echo "====================================="

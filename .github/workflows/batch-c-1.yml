@@ -1,10 +1,10 @@
-name: "Batch C"
+name: "Batch C-1"
 
 
 on:
   workflow_run:
     workflows:
-      - "Batch B"
+      - "Batch B-2"
     types:
       - completed
   workflow_dispatch:
@@ -42,9 +42,9 @@ jobs:
           echo "Account 3 | Day=$DOW | Geo=__cr.$GEO"
           echo "====================================="
 
-  # ── Job 2: run all Batch C scrapers ─────────────────────────────────────────
+  # ── Job 2: run Batch C-1 scraper ─────────────────────────────────────────────
   scrape:
-    name: Scrape Batch C
+    name: Scrape Batch C-1
     needs: calculate-geo
     runs-on: ubuntu-22.04
     env:
@@ -69,38 +69,20 @@ jobs:
       - name: Install dependencies
         run: pip install -r CFl_data/requirements.txt
 
-      - name: Random gap after Batch B (25–45 min stealth pause)
+      - name: Random gap after Batch B-2 (25–45 min stealth pause)
         run: |
           DELAY=$((RANDOM % 1200 + 1500))
-          echo "Waiting ${DELAY}s (~$(( DELAY / 60 )) min) before starting Batch C..."
+          echo "Waiting ${DELAY}s (~$(( DELAY / 60 )) min) before starting Batch C-1..."
           sleep $DELAY
 
-      - name: "[1/7] Automotive-Cars-and-Trucks"
-        run: cd "CFl_data/Automotive-Cars-and-Trucks" && python main.py
-
-      - name: "[2/7] Dalil"
+      - name: "[1/1] Dalil"
         run: cd CFl_data/Dalil && python main.py
 
-      - name: "[3/7] Electronics"
-        run: cd CFl_data/Electronics && python main.py
-
-      - name: "[4/7] Wanted-Cars"
-        run: cd CFl_data/Wanted-Cars && python main.py
-
-      - name: "[5/7] Furniture"
-        run: cd CFl_data/Furniture && python main.py
-
-      - name: "[6/7] Commercials"
-        run: cd CFl_data/Commercials && python main.py
-
-      - name: "[7/7] Rest-Automotive-Part3"
-        run: cd CFl_data/Rest-Automotive-Part3 && python main.py
-
-      - name: Batch C summary
+      - name: Batch C-1 summary
         if: always()
         run: |
           echo "====================================="
-          echo "BATCH C COMPLETE"
+          echo "BATCH C-1 COMPLETE"
           echo "Account : DATAIMPULSE_USER_3"
           echo "Geo     : __cr.${{ needs.calculate-geo.outputs.geo }}"
           echo "====================================="

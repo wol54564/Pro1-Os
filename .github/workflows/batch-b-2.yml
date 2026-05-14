@@ -1,11 +1,11 @@
-name: "Batch B"
+name: "Batch B-2"
 
 
 
 on:
   workflow_run:
     workflows:
-      - "Batch A"
+      - "Batch B-1"
     types:
       - completed
   workflow_dispatch:
@@ -43,9 +43,9 @@ jobs:
           echo "Account 2 | Day=$DOW | Geo=__cr.$GEO"
           echo "====================================="
 
-  # ── Job 2: run all Batch B scrapers ─────────────────────────────────────────
+  # ── Job 2: run Batch B-2 scrapers ────────────────────────────────────────────
   scrape:
-    name: Scrape Batch B
+    name: Scrape Batch B-2
     needs: calculate-geo
     runs-on: ubuntu-22.04
     env:
@@ -70,38 +70,35 @@ jobs:
       - name: Install dependencies
         run: pip install -r CFl_data/requirements.txt
 
-      - name: Random gap after Batch A (25–45 min stealth pause)
+      - name: Random gap after Batch B-1 (25–45 min stealth pause)
         run: |
           DELAY=$((RANDOM % 1200 + 1500))
-          echo "Waiting ${DELAY}s (~$(( DELAY / 60 )) min) before starting Batch B..."
+          echo "Waiting ${DELAY}s (~$(( DELAY / 60 )) min) before starting Batch B-2..."
           sleep $DELAY
 
-      - name: "[1/7] Others"
+      - name: "[1/6] Others"
         run: cd CFl_data/Others && python main.py
 
-      - name: "[2/7] Education"
+      - name: "[2/6] Education"
         run: cd CFl_data/Education && python main.py
 
-      - name: "[3/7] Used Car"
-        run: cd "CFl_data/Used Car" && python main_used_cars.py
-
-      - name: "[4/7] Fashion-and-Family"
+      - name: "[3/6] Fashion-and-Family"
         run: cd "CFl_data/Fashion-and-Family" && python main.py
 
-      - name: "[5/7] Services"
+      - name: "[4/6] Services"
         run: cd CFl_data/Services && python main.py
 
-      - name: "[6/7] Contracting"
+      - name: "[5/6] Contracting"
         run: cd CFl_data/Contracting && python main.py
 
-      - name: "[7/7] Rest-Automotive-Part2"
+      - name: "[6/6] Rest-Automotive-Part2"
         run: cd CFl_data/Rest-Automotive-Part2 && python main.py
 
-      - name: Batch B summary
+      - name: Batch B-2 summary
         if: always()
         run: |
           echo "====================================="
-          echo "BATCH B COMPLETE"
+          echo "BATCH B-2 COMPLETE"
           echo "Account : DATAIMPULSE_USER_2"
           echo "Geo     : __cr.${{ needs.calculate-geo.outputs.geo }}"
           echo "====================================="

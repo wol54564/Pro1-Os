@@ -158,6 +158,7 @@ class UsedCarsScraperOrchestrator:
         all_listings = []
         page_num = 1
         yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        today = datetime.now().strftime("%Y-%m-%d")
 
         while True:
             # Fetch WITHOUT filter_yesterday so we can inspect all dates on the page
@@ -174,12 +175,16 @@ class UsedCarsScraperOrchestrator:
                 break
 
             yesterday_listings = []
+            found_today = False
             found_older = False
             for listing in listings:
                 date_pub = listing.get("date_published", "")
+                date_only = date_pub[:10] if date_pub else ""
                 if date_pub.startswith(yesterday):
                     yesterday_listings.append(listing)
-                elif date_pub and date_pub[:10] < yesterday:
+                elif date_only == today:
+                    found_today = True
+                elif date_only and date_only < yesterday:
                     found_older = True
 
             all_listings.extend(yesterday_listings)
@@ -188,10 +193,9 @@ class UsedCarsScraperOrchestrator:
                 f"(page total: {len(listings)})"
             )
 
-            # Only stop early when this page has NO yesterday listings AND has older
-            # listings — meaning we have fully passed the yesterday window.
-            # If yesterday listings are still appearing alongside older ones, keep paginating.
-            if (len(yesterday_listings) == 0 and found_older) or page_num >= total_pages:
+            # Stop only when the page has no today/yesterday listings AND has older ones —
+            # meaning we have fully passed the yesterday window in the sort order.
+            if (not found_today and len(yesterday_listings) == 0 and found_older) or page_num >= total_pages:
                 break
 
             page_num += 1

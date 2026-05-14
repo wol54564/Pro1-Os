@@ -13,4 +13,4 @@ test/test-403-fix.yml
 test/test-full-scrape-used-cars.yml
 test/test-full-scrape.yml
 test/test-uc.yml
-
+test/*

@@ -180,8 +180,6 @@ class UsedCarsScraperOrchestrator:
                 if date_pub.startswith(yesterday):
                     yesterday_listings.append(listing)
                 elif date_pub and date_pub[:10] < yesterday:
-                    # Listings are newest-first; once we see one older than yesterday
-                    # there are no more yesterday listings on subsequent pages
                     found_older = True
 
             all_listings.extend(yesterday_listings)
@@ -190,7 +188,10 @@ class UsedCarsScraperOrchestrator:
                 f"(page total: {len(listings)})"
             )
 
-            if found_older or page_num >= total_pages:
+            # Only stop early when this page has NO yesterday listings AND has older
+            # listings — meaning we have fully passed the yesterday window.
+            # If yesterday listings are still appearing alongside older ones, keep paginating.
+            if (len(yesterday_listings) == 0 and found_older) or page_num >= total_pages:
                 break
 
             page_num += 1

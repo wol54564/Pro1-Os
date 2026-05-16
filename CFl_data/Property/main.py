@@ -33,7 +33,7 @@ async def get_property_subcategories():
     try:
         random_delay(1.0, 3.0)  # Random delay before request
         rotate_user_agent(SESSION)  # Rotate user agent
-        response = SESSION.get(BASE_URL, timeout=30)
+        response = SESSION.get(BASE_URL, timeout=60)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.content, 'html.parser')
@@ -56,7 +56,7 @@ async def get_business_listings(url):
     try:
         random_delay(1.0, 3.0)  # Random delay before request
         rotate_user_agent(SESSION)  # Rotate user agent
-        response = SESSION.get(url, timeout=30)
+        response = SESSION.get(url, timeout=60)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.content, 'html.parser')
@@ -90,7 +90,7 @@ async def scrape_subcategory(subcat):
     try:
         random_delay(1.0, 3.0)  # Random delay before request
         rotate_user_agent(SESSION)  # Rotate user agent
-        response = SESSION.get(base_url.format(1), timeout=30)
+        response = SESSION.get(base_url.format(1), timeout=60)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.content, 'html.parser')

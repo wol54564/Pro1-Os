@@ -18,7 +18,7 @@ class CarScraper:
             # Fetch main page
             random_delay(1.0, 3.0)  # Random delay before request
             rotate_user_agent(self.session)  # Rotate user agent
-            response = self.session.get(self.url, timeout=30)
+            response = self.session.get(self.url, timeout=60)
             response.raise_for_status()
             
             soup = BeautifulSoup(response.content, 'html.parser')
@@ -59,7 +59,7 @@ class CarScraper:
         try:
             random_delay(1.0, 3.0)  # Random delay before request
             rotate_user_agent(self.session)  # Rotate user agent
-            response = self.session.get(brand_link, timeout=30)
+            response = self.session.get(brand_link, timeout=60)
             response.raise_for_status()
             
             soup = BeautifulSoup(response.content, 'html.parser')

@@ -49,7 +49,7 @@ class AutomotiveServicesJsonScraper:
             logger.info(f"Fetching {url}...")
             random_delay(1.0, 3.0)  # Random delay before request
             rotate_user_agent(self.session)  # Rotate user agent
-            response = self.session.get(url, timeout=30)
+            response = self.session.get(url, timeout=60)
             response.raise_for_status()
             
             soup = BeautifulSoup(response.content, 'html.parser')
@@ -274,7 +274,7 @@ class AutomotiveServicesJsonScraper:
             Image bytes or None if failed
         """
         try:
-            response = self.session.get(image_url, timeout=30)
+            response = self.session.get(image_url, timeout=60)
             response.raise_for_status()
             return response.content
         except Exception as e:

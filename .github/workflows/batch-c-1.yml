@@ -76,6 +76,7 @@ jobs:
           sleep $DELAY
 
       - name: "[1/1] Dalil"
+        continue-on-error: true
         run: cd CFl_data/Dalil && python main.py
 
       - name: Batch C-1 summary

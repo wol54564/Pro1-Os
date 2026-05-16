@@ -77,21 +77,27 @@ jobs:
           sleep $DELAY
 
       - name: "[1/6] Others"
+        continue-on-error: true
         run: cd CFl_data/Others && python main.py
 
       - name: "[2/6] Education"
+        continue-on-error: true
         run: cd CFl_data/Education && python main.py
 
       - name: "[3/6] Fashion-and-Family"
+        continue-on-error: true
         run: cd "CFl_data/Fashion-and-Family" && python main.py
 
       - name: "[4/6] Services"
+        continue-on-error: true
         run: cd CFl_data/Services && python main.py
 
       - name: "[5/6] Contracting"
+        continue-on-error: true
         run: cd CFl_data/Contracting && python main.py
 
       - name: "[6/6] Rest-Automotive-Part2"
+        continue-on-error: true
         run: cd CFl_data/Rest-Automotive-Part2 && python main.py
 
       - name: Batch B-2 summary

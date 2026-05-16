@@ -356,10 +356,11 @@ async def main():
     """Entry point for the scraper"""
     
     # Get bucket name from environment variable (for GitHub Actions)
-    bucket_name = os.getenv('AWS_R2_BUCKET', 'your-bucket-name')
+    bucket_name = os.getenv('CF_R2_BUCKET_NAME')
     
-    if bucket_name == 'your-bucket-name':
-        logger.warning("Using default bucket name. Set AWS_R2_BUCKET environment variable for production.")
+    if not bucket_name:
+        logger.error("CF_R2_BUCKET_NAME environment variable is not set.")
+        return
     
     orchestrator = CommercialsScraperOrchestrator(
         bucket_name=bucket_name,

@@ -193,7 +193,7 @@ class SmartSession:
                 if attempt > 0:
                     profile = self._next_profile()
                     logger.warning(
-                        f"403 — retrying with '{profile}' "
+                        f"Retrying with profile '{profile}' "
                         f"(attempt {attempt + 1}/{len(_IMPERSONATION_PROFILES)})"
                     )
                     time.sleep(random.uniform(2.0, 4.0))
@@ -213,8 +213,18 @@ class SmartSession:
                 return response
 
             except Exception as e:
-                if "403" in str(e):
+                err_str = str(e)
+                # Retry on 403 or connection-level failures (timeout, refused, reset)
+                is_connection_error = any(
+                    token in err_str
+                    for token in ("403", "timed out", "timeout", "(28)", "(6)", "(7)", "(35)",
+                                   "Connection", "CONNECT", "SSL", "RemoteDisconnected")
+                )
+                if is_connection_error:
                     last_exc = e
+                    logger.warning(
+                        f"Connection error on attempt {attempt + 1}: {err_str[:120]} — retrying"
+                    )
                     continue
                 raise
 

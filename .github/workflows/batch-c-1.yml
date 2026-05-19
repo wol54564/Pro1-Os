@@ -9,6 +9,9 @@ on:
       - completed
   workflow_dispatch:
 
+permissions:
+  actions: write
+
 concurrency:
   group: batch-pipeline
   cancel-in-progress: false
@@ -78,6 +81,12 @@ jobs:
       - name: "[1/1] Dalil"
         continue-on-error: true
         run: cd CFl_data/Dalil && python main.py
+
+      - name: Trigger Batch C-2
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run "batch-c-2.yml" --repo "${{ github.repository }}"
 
       - name: Batch C-1 summary
         if: always()

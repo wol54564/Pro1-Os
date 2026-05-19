@@ -2,11 +2,6 @@ name: "Batch C-2"
 
 
 on:
-  workflow_run:
-    workflows:
-      - "Batch C-1"
-    types:
-      - completed
   workflow_dispatch:
 
 concurrency:

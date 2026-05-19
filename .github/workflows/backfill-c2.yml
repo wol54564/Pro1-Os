@@ -1,0 +1,133 @@
+name: "Backfill — Batch C-2"
+
+# Trigger manually and supply the TARGET_DATE.
+# The scrapers will fetch data from TARGET_DATE - 1 day and save it under
+# the TARGET_DATE partition in R2 (mirrors what C-2 would have done normally).
+#
+# Example: enter 2026-05-15 → scrapes May 14 data, saves under May 15 in R2.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: >
+          Date to run AS (YYYY-MM-DD).
+          Data from the day BEFORE this date will be scraped.
+          Example: enter 2026-05-15 to recover May 14 data.
+        required: true
+        type: string
+
+concurrency:
+  group: backfill-c2-${{ github.event.inputs.target_date }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PYTHONUTF8: '1'
+
+jobs:
+
+  # ── Job 1: derive the geo rotation for the supplied target date ──────────────
+  calculate-geo:
+    name: Calculate geo for ${{ github.event.inputs.target_date }}
+    runs-on: ubuntu-22.04
+    outputs:
+      geo: ${{ steps.geo.outputs.geo }}
+    steps:
+      - name: Determine geo from target date day-of-week
+        id: geo
+        run: |
+          TARGET_DATE="${{ github.event.inputs.target_date }}"
+          # Validate date format
+          if ! date -d "$TARGET_DATE" &>/dev/null; then
+            echo "ERROR: Invalid date '$TARGET_DATE'. Use YYYY-MM-DD." >&2
+            exit 1
+          fi
+          DOW=$(date -d "$TARGET_DATE" +%w)   # 0=Sun 1=Mon … 6=Sat
+          if [ "$DOW" = "0" ]; then
+            GEO="sa"        # Sunday
+          elif [ $(( DOW % 2 )) = "1" ]; then
+            GEO="eg"        # Mon / Wed / Fri
+          else
+            GEO="kw"        # Tue / Thu / Sat
+          fi
+          echo "geo=$GEO" >> $GITHUB_OUTPUT
+          SCRAPE_DATE=$(date -d "$TARGET_DATE -1 day" +%Y-%m-%d)
+          echo "============================================="
+          echo "Account 3  |  Target=$TARGET_DATE  |  Scrape=$SCRAPE_DATE"
+          echo "DOW=$DOW   |  Geo=__cr.$GEO"
+          echo "============================================="
+
+  # ── Job 2: run all Batch C-2 backfill scrapers ───────────────────────────────
+  scrape:
+    name: Backfill scrape — ${{ github.event.inputs.target_date }}
+    needs: calculate-geo
+    runs-on: ubuntu-22.04
+    env:
+      TARGET_DATE: ${{ github.event.inputs.target_date }}
+      DATAIMPULSE_USER: ${{ secrets.DATAIMPULSE_USER_3 }}__cr.${{ needs.calculate-geo.outputs.geo }}
+      DATAIMPULSE_PASS: ${{ secrets.DATAIMPULSE_PASS_3 }}
+      DATAIMPULSE_HOST: gw.dataimpulse.com
+      DATAIMPULSE_PORT: '823'
+      CF_R2_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+      CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+      CF_R2_ENDPOINT_URL: ${{ secrets.CF_R2_ENDPOINT_URL }}
+      CF_R2_BUCKET_NAME: ${{ secrets.CF_R2_BUCKET_NAME }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r CFl_data/requirements.txt
+
+      - name: Show backfill target
+        run: |
+          SCRAPE_DATE=$(date -d "$TARGET_DATE -1 day" +%Y-%m-%d)
+          echo "============================================="
+          echo "BACKFILL BATCH C-2 STARTING"
+          echo "Save date  (TARGET_DATE) : $TARGET_DATE"
+          echo "Scrape date (day before) : $SCRAPE_DATE"
+          echo "Geo                      : __cr.${{ needs.calculate-geo.outputs.geo }}"
+          echo "============================================="
+
+      - name: "[1/6] Automotive-Cars-and-Trucks"
+        continue-on-error: true
+        run: cd CFl_data/backfill-c2/Automotive-Cars-and-Trucks && python main.py
+
+      - name: "[2/6] Electronics"
+        continue-on-error: true
+        run: cd CFl_data/backfill-c2/Electronics && python main.py
+
+      - name: "[3/6] Wanted-Cars"
+        continue-on-error: true
+        run: cd CFl_data/backfill-c2/Wanted-Cars && python main.py
+
+      - name: "[4/6] Furniture"
+        continue-on-error: true
+        run: cd CFl_data/backfill-c2/Furniture && python main.py
+
+      - name: "[5/6] Commercials"
+        continue-on-error: true
+        run: cd CFl_data/backfill-c2/Commercials && python main.py
+
+      - name: "[6/6] Rest-Automotive-Part3"
+        continue-on-error: true
+        run: cd CFl_data/backfill-c2/Rest-Automotive-Part3 && python main.py
+
+      - name: Backfill C-2 summary
+        if: always()
+        run: |
+          SCRAPE_DATE=$(date -d "$TARGET_DATE -1 day" +%Y-%m-%d)
+          echo "============================================="
+          echo "BACKFILL BATCH C-2 COMPLETE"
+          echo "Save date  (TARGET_DATE) : $TARGET_DATE"
+          echo "Scrape date (day before) : $SCRAPE_DATE"
+          echo "Account                  : DATAIMPULSE_USER_3"
+          echo "Geo                      : __cr.${{ needs.calculate-geo.outputs.geo }}"
+          echo "============================================="

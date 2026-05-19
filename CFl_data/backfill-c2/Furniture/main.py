@@ -9,40 +9,27 @@ TARGET_DATE you supply).  R2 data is stored under the TARGET_DATE partition.
 
 import os
 import sys
+from datetime import datetime, timedelta
 
 # ── 1. Read and validate TARGET_DATE ─────────────────────────────────────────
 _TARGET_DATE_STR = os.environ.get("TARGET_DATE", "").strip()
 if not _TARGET_DATE_STR:
     raise SystemExit("ERROR: TARGET_DATE environment variable is required (e.g. 2026-05-15)")
 
-# ── 2. Monkey-patch datetime.now() BEFORE any scraper code is imported ────────
-import datetime as _dt_module
-from datetime import timedelta as _timedelta
-
-_OriginalDatetime = _dt_module.datetime
-
 try:
-    _target_dt = _OriginalDatetime.strptime(_TARGET_DATE_STR, "%Y-%m-%d")
+    _target_dt = datetime.strptime(_TARGET_DATE_STR, "%Y-%m-%d")
 except ValueError:
     raise SystemExit(
         f"ERROR: Invalid TARGET_DATE '{_TARGET_DATE_STR}'. Expected format: YYYY-MM-DD"
     )
 
-_scrape_dt = _target_dt - _timedelta(days=1)
+_scrape_dt = _target_dt - timedelta(days=1)
 print(f"[BACKFILL] Save date   (TARGET_DATE) : {_target_dt.strftime('%Y-%m-%d')}")
 print(f"[BACKFILL] Scrape date (day before)  : {_scrape_dt.strftime('%Y-%m-%d')}")
 
-
-class _PatchedDatetime(_OriginalDatetime):
-    """Drop-in replacement for datetime that returns TARGET_DATE from .now()."""
-    @classmethod
-    def now(cls, tz=None):
-        if tz is not None:
-            return _target_dt.replace(tzinfo=tz)
-        return _target_dt
-
-
-_dt_module.datetime = _PatchedDatetime  # Apply patch before downstream imports
+# ── 2. Set environment variables for scraper to read (if needed) ──────────────
+os.environ['BACKFILL_TARGET_DATE'] = _target_dt.strftime('%Y-%m-%d')
+os.environ['BACKFILL_SCRAPE_DATE'] = _scrape_dt.strftime('%Y-%m-%d')
 
 # ── 3. Resolve paths ─────────────────────────────────────────────────────────
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))

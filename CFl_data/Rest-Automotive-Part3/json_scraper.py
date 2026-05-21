@@ -20,7 +20,7 @@ class RestAutomotiveJsonScraper:
     """
     Scrapes Q84Sale automotive businesses and car rental listings using JSON data from __NEXT_DATA__ script tag
     Handles three different URL structures:
-    1. Businesses (dealerships, car-offices): businessesData structure
+    1. Businesses (dealerships, car-offices, car-garages): businessesData structure
     2. Car Rental: subcategories structure
     """
     
@@ -177,11 +177,11 @@ class RestAutomotiveJsonScraper:
     async def get_business_listings(self, business_slug: str, category_type: str, page_num: int = 1,
                                    filter_yesterday: bool = False) -> tuple:
         """
-        Get all listings for a specific business (dealerships or car-offices)
+        Get all listings for a specific business (dealerships, car-offices, or car-garages)
         
         Args:
             business_slug: The slug of the business (e.g., 'kuwait-finance-house-377')
-            category_type: "dealerships" or "car-offices"
+            category_type: "dealerships", "car-offices", or "car-garages"
             page_num: Page number (default 1)
             filter_yesterday: If True, only returns listings from yesterday
         
@@ -190,8 +190,16 @@ class RestAutomotiveJsonScraper:
         """
         try:
             # Build URL for business listings page
+            # Extract the URL path from base_urls to handle special cases like car-garages-1
             # Format: https://www.q84sale.com/ar/businesses/car-offices/shoneez-general-trading-co.-6/all
-            url = f"https://www.q84sale.com/ar/businesses/{category_type}/{business_slug}/all"
+            base_url = self.base_urls.get(category_type, "")
+            if not base_url:
+                logger.error(f"Unknown category type: {category_type}")
+                return [], 0
+            
+            # Extract the path part after /businesses/
+            url_path = base_url.split("/businesses/")[1] if "/businesses/" in base_url else category_type
+            url = f"https://www.q84sale.com/ar/businesses/{url_path}/{business_slug}/all"
             logger.info(f"Fetching listings for {business_slug} (page {page_num})...")
             
             json_data = await self.get_page_json_data(url)

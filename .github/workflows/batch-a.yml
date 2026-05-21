@@ -73,31 +73,35 @@ jobs:
           echo "Waiting ${DELAY}s before starting..."
           sleep $DELAY
 
-      - name: "[1/7] Animals"
+      - name: "[1/8] Animals"
         continue-on-error: true
         run: cd CFl_data/Animals && python main.py
 
-      - name: "[2/7] Bikes"
+      - name: "[2/8] Bikes"
         continue-on-error: true
         run: cd CFl_data/bikes && python main.py
 
-      - name: "[3/7] Camping"
+      - name: "[3/8] Gifts"
+        continue-on-error: true
+        run: cd CFl_data/Gifts && python main.py
+
+      - name: "[4/8] Camping"
         continue-on-error: true
         run: cd CFl_data/Camping && python main.py
 
-      - name: "[4/7] Property"
+      - name: "[5/8] Property"
         continue-on-error: true
         run: cd CFl_data/Property && python main.py
 
-      - name: "[5/7] New Car"
+      - name: "[6/8] New Car"
         continue-on-error: true
         run: cd "CFl_data/New Car" && python main.py
 
-      - name: "[6/7] Rest-Automotive-Part1"
+      - name: "[7/8] Rest-Automotive-Part1"
         continue-on-error: true
         run: cd CFl_data/Rest-Automotive-Part1 && python main.py
 
-      - name: "[7/7] Jobs"
+      - name: "[8/8] Jobs"
         continue-on-error: true
         run: cd CFl_data/Jobs && python main.py
 
@@ -106,6 +110,4 @@ jobs:
         run: |
           echo "====================================="
           echo "BATCH A COMPLETE"
-          echo "Account : DATAIMPULSE_USER_1"
-          echo "Geo     : __cr.${{ needs.calculate-geo.outputs.geo }}"
           echo "====================================="

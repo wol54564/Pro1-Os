@@ -28,6 +28,7 @@ class RestAutomotiveJsonScraper:
         self.base_urls = {
             "dealerships": "https://www.q84sale.com/ar/businesses/dealerships",
             "car-offices": "https://www.q84sale.com/ar/businesses/car-offices",
+            "car-garages": "https://www.q84sale.com/ar/businesses/car-garages-1",
             "car-rental": "https://www.q84sale.com/ar/automotive/car-rental"
         }
         self.session = create_session()

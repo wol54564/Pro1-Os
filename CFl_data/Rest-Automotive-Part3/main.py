@@ -19,10 +19,11 @@ logger = logging.getLogger(__name__)
 class RestAutomotiveScraperOrchestrator:
     """
     Orchestrates the scraping of Rest Automotive Part 3 data with AWS R2 integration
-    Handles three categories:
+    Handles four categories:
     1. Dealerships (businesses/dealerships)
     2. Car Offices (businesses/car-offices)
-    3. Car Rental (automotive/car-rental)
+    3. Car Garages (businesses/car-garages)
+    4. Car Rental (automotive/car-rental)
     
     Creates separate Excel files for each category with subcategory sheets
     """
@@ -74,7 +75,7 @@ class RestAutomotiveScraperOrchestrator:
         Args:
             listings: List of basic listing info from listings page
             subcategory_slug: Subcategory slug for organizing images
-            category_type: Main category type (dealerships, car-offices, car-rental)
+            category_type: Main category type (dealerships, car-offices, car-garages, car-rental)
         
         Returns:
             List of detailed listing information with R2 image URLs
@@ -151,7 +152,7 @@ class RestAutomotiveScraperOrchestrator:
         
         Args:
             business: Business dictionary with slug, name, etc.
-            category_type: "dealerships" or "car-offices"
+            category_type: "dealerships" or "car-offices" or "car-garages"
             
         Returns:
             Dictionary with scraped data organized by business
@@ -262,10 +263,10 @@ class RestAutomotiveScraperOrchestrator:
     
     async def scrape_category(self, category_type: str) -> List[Dict]:
         """
-        Scrape a complete category (dealerships, car-offices, or car-rental)
+        Scrape a complete category (dealerships, car-offices, car-garages, or car-rental)
         
         Args:
-            category_type: "dealerships", "car-offices", or "car-rental"
+            category_type: "dealerships", "car-offices", "car-garages", or "car-rental"
         
         Returns:
             List of results for each subcategory/business in the category
@@ -275,7 +276,7 @@ class RestAutomotiveScraperOrchestrator:
             logger.info(f"SCRAPING CATEGORY: {category_type.upper()}")
             logger.info(f"{'='*60}")
             
-            if category_type in ["dealerships", "car-offices"]:
+            if category_type in ["dealerships", "car-offices", "car-garages"]:
                 # Get businesses
                 businesses = await self.scraper.get_businesses(category_type)
                 
@@ -333,7 +334,7 @@ class RestAutomotiveScraperOrchestrator:
         Creates an Excel file for the category with sheets for each subcategory/business
         
         Args:
-            category_type: "dealerships", "car-offices", or "car-rental"
+            category_type: "dealerships", "car-offices", "car-garages", or "car-rental"
             results: List of results for each subcategory/business
         
         Returns:
@@ -479,13 +480,13 @@ async def main():
         logger.info("="*60)
         logger.info(f"Bucket: {bucket_name}")
         logger.info(f"Mode: Scrape ALL available pages per category")
-        logger.info("Categories: dealerships, car-offices, car-rental")
+        logger.info("Categories: dealerships, car-offices, car-garages, car-rental")
         
         orchestrator = RestAutomotiveScraperOrchestrator(bucket_name=bucket_name, profile_name=profile_name)
         await orchestrator.initialize()
         
         # Categories to scrape
-        categories = ["dealerships", "car-offices", "car-rental"]
+        categories = ["dealerships", "car-offices", "car-garages", "car-rental"]
         all_upload_summaries = []
         
         for category in categories:

@@ -304,7 +304,7 @@ class R2Helper:
             target_date: Date for partitioning
             listing_id: Listing ID for image naming (if provided, image will be named as listing_id_index.jpg)
             image_index: Index of image in the list (0, 1, 2, etc.)
-            category_type: Main category type (dealerships, car-offices, car-rental)
+            category_type: Main category type (dealerships, car-offices, car-garages, car-rental)
         
         Returns:
             Full R2 path or None if failed

@@ -99,6 +99,4 @@ jobs:
         run: |
           echo "====================================="
           echo "BATCH C-2 COMPLETE"
-          echo "Account : DATAIMPULSE_USER_3"
-          echo "Geo     : __cr.${{ needs.calculate-geo.outputs.geo }}"
           echo "====================================="

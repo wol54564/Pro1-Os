@@ -402,7 +402,7 @@ async def main():
     # Configuration
     BUCKET_NAME = os.environ.get("CF_R2_BUCKET_NAME")
     
-    orchestrator = sportScraperOrchestrator(
+    orchestrator = SportScraperOrchestrator(
         bucket_name=BUCKET_NAME,
     )
     

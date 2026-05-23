@@ -83,7 +83,7 @@ jobs:
 
       - name: "[3/8] Gifts"
         continue-on-error: true
-        run: cd CFl_data/Gifts && python main.py
+        run: cd CFl_data/gifts && python main.py
 
       - name: "[4/8] Camping"
         continue-on-error: true

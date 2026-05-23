@@ -10,12 +10,12 @@ env:
 jobs:
 
   calculate-geo:
-    name: Calculate 
+    name: Calculate geo rotation
     runs-on: ubuntu-22.04
     outputs:
       geo: ${{ steps.geo.outputs.geo }}
     steps:
-      - name: Determine 
+      - name: Determine geo from day-of-week
         id: geo
         run: |
           DOW=$(date +%w)   # 0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat
@@ -25,6 +25,11 @@ jobs:
             GEO="kw"        # Mon / Wed / Fri
           else
             GEO="sa"        # Tue / Thu / Sat
+          fi
+          echo "geo=$GEO" >> $GITHUB_OUTPUT
+          echo "====================================="
+          echo "Day=$DOW | Geo=__cr.$GEO"
+          echo "====================================="
         
 
   # ── Job 2: scrape ────────────────────────────────────────────────────────────

@@ -14,3 +14,12 @@ test/test-full-scrape-used-cars.yml
 test/test-full-scrape.yml
 test/test-uc.yml
 test/*
+skill.md
+monitor.md
+Markdown
+websites-config.yml
+websites-config-prompt.md
+websites-config-template.yml
+prompts/excel-schema-prompt.md
+monitor_stats.yml
+prompts/monitor-prompt.md

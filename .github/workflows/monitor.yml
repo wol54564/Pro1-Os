@@ -1,0 +1,154 @@
+name: "Schema Monitor"
+
+# ── Triggers ────────────────────────────────────────────────────────────────
+on:
+  # Daily check at 08:00 UTC Mon–Sat (all batches finish by ~06:00 UTC)
+  # Weekly stats refresh at 09:00 UTC on Sunday
+  schedule:
+    - cron: '0 8 * * 1-6'   # Mon–Sat  →  daily-check job
+    - cron: '0 9 * * 0'     # Sunday   →  weekly-stats job
+
+  # Manual trigger — lets you pick a custom date and mode
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Date to inspect (YYYY-MM-DD). Leave blank for yesterday."
+        required: false
+        default: ""
+      update_stats:
+        description: "Update monitor_stats.yml with observed data?"
+        type: boolean
+        default: false
+      days_lookback:
+        description: "How many days to scan (1 = yesterday only)"
+        required: false
+        default: "1"
+      quality_checks:
+        description: "Run deep data-quality checks (slower)?"
+        type: boolean
+        default: false
+      fail_on_error:
+        description: "Fail the workflow if any scraper check fails?"
+        type: boolean
+        default: false
+
+# ── One run at a time ────────────────────────────────────────────────────────
+concurrency:
+  group: schema-monitor
+  cancel-in-progress: false
+
+env:
+  PYTHONUTF8: "1"
+
+# ════════════════════════════════════════════════════════════════════════════
+jobs:
+
+  # ── Job 1: daily validation ────────────────────────────────────────────────
+  daily-check:
+    name: "Daily schema validation"
+    runs-on: ubuntu-22.04
+    # Runs on Mon–Sat schedule (cron '0 8 * * 1-6') or manual dispatch
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' && github.event.schedule == '0 8 * * 1-6')
+
+    env:
+      CF_R2_ACCESS_KEY_ID:     ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+      CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+      CF_R2_ENDPOINT_URL:      ${{ secrets.CF_R2_ENDPOINT_URL }}
+      CF_R2_BUCKET_NAME:       ${{ secrets.CF_R2_BUCKET_NAME }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: CFl_data/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r CFl_data/requirements.txt pyyaml
+
+      # ── Build CLI flags ───────────────────────────────────────────────────
+      - name: Build monitor flags
+        id: flags
+        run: |
+          FLAGS=""
+
+          # --date
+          DATE="${{ github.event.inputs.date }}"
+          if [ -n "$DATE" ]; then
+            FLAGS="$FLAGS --date $DATE"
+          fi
+
+          # --days-lookback
+          LOOKBACK="${{ github.event.inputs.days_lookback }}"
+          if [ -n "$LOOKBACK" ] && [ "$LOOKBACK" != "1" ]; then
+            FLAGS="$FLAGS --days-lookback $LOOKBACK"
+          fi
+
+          # --update-stats
+          if [ "${{ github.event.inputs.update_stats }}" = "true" ]; then
+            FLAGS="$FLAGS --update-stats"
+          fi
+
+          # --quality
+          if [ "${{ github.event.inputs.quality_checks }}" = "true" ]; then
+            FLAGS="$FLAGS --quality"
+          fi
+
+          # --fail-on-error
+          if [ "${{ github.event.inputs.fail_on_error }}" = "true" ]; then
+            FLAGS="$FLAGS --fail-on-error"
+          fi
+
+          echo "flags=$FLAGS" >> $GITHUB_OUTPUT
+          echo "Monitor flags: $FLAGS"
+
+      # ── Run inspector ─────────────────────────────────────────────────────
+      - name: Run schema inspector
+        run: python monitor/inspect_r2_schema.py ${{ steps.flags.outputs.flags }}
+
+      # monitor_stats.yml is written directly to R2 by the script — no git commit needed.
+
+  # ── Job 2: weekly stats refresh ───────────────────────────────────────────
+  weekly-stats:
+    name: "Weekly stats refresh (last 7 days)"
+    runs-on: ubuntu-22.04
+    # Runs on Sunday schedule (cron '0 9 * * 0')
+    # NOTE: also triggered by workflow_dispatch — guard with an input if needed
+    if: >
+      github.event_name == 'schedule' && github.event.schedule == '0 9 * * 0'
+
+    env:
+      CF_R2_ACCESS_KEY_ID:     ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+      CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+      CF_R2_ENDPOINT_URL:      ${{ secrets.CF_R2_ENDPOINT_URL }}
+      CF_R2_BUCKET_NAME:       ${{ secrets.CF_R2_BUCKET_NAME }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: CFl_data/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r CFl_data/requirements.txt pyyaml
+
+      - name: Refresh stats over last 7 days
+        run: |
+          python monitor/inspect_r2_schema.py \
+            --days-lookback 7 \
+            --update-stats \
+            --quality
+
+      # monitor_stats.yml is written directly to R2 by the script — no git commit needed.
+

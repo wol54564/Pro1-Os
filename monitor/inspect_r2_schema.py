@@ -52,8 +52,9 @@ log = logging.getLogger("monitor")
 REPO_ROOT   = Path(__file__).resolve().parent.parent
 CONFIG_FILE = REPO_ROOT / "websites-config.yml"
 
-# Stats live in R2, not the repo
-STATS_R2_KEY = "4sale-data/monitor/monitor_stats.yml"
+# Config and stats live in R2 for CI; local file is used when present (dev).
+CONFIG_R2_KEY = "4sale-data/monitor/websites-config.yml"
+STATS_R2_KEY  = "4sale-data/monitor/monitor_stats.yml"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -204,9 +205,44 @@ def check_data_quality(raw: bytes, sheet_name: str) -> Dict:
 # CONFIG LOADING
 # ══════════════════════════════════════════════════════════════════════════════
 
-def load_config() -> Dict:
-    with open(CONFIG_FILE, encoding="utf-8") as fh:
-        return yaml.safe_load(fh)
+def load_config(client=None, bucket: Optional[str] = None) -> Dict:
+    """Load config from the local file (dev) or R2 (CI when the file is gitignored)."""
+    if CONFIG_FILE.exists():
+        with open(CONFIG_FILE, encoding="utf-8") as fh:
+            log.info(f"Loaded config from {CONFIG_FILE}")
+            return yaml.safe_load(fh)
+
+    if client and bucket:
+        try:
+            resp = client.get_object(Bucket=bucket, Key=CONFIG_R2_KEY)
+            raw  = resp["Body"].read().decode("utf-8")
+            log.info(f"Loaded config from r2://{bucket}/{CONFIG_R2_KEY}")
+            return yaml.safe_load(raw)
+        except client.exceptions.NoSuchKey:
+            log.debug(f"No config at r2://{bucket}/{CONFIG_R2_KEY}")
+        except Exception as exc:
+            log.warning(f"Could not load config from R2: {exc}")
+
+    raise FileNotFoundError(
+        f"{CONFIG_FILE.name} not found locally and not available in R2 "
+        f"at {CONFIG_R2_KEY}. Create the file locally, then run with "
+        f"--upload-config to publish it to R2 for CI."
+    )
+
+
+def upload_config(client, bucket: str) -> None:
+    """Upload the local websites-config.yml to R2 for GitHub Actions."""
+    if not CONFIG_FILE.exists():
+        raise FileNotFoundError(f"Cannot upload — {CONFIG_FILE} does not exist.")
+
+    body = CONFIG_FILE.read_bytes()
+    client.put_object(
+        Bucket=bucket,
+        Key=CONFIG_R2_KEY,
+        Body=body,
+        ContentType="text/yaml",
+    )
+    log.info(f"Config uploaded → r2://{bucket}/{CONFIG_R2_KEY}")
 
 
 def r2_base_prefix(r2_path_raw: str) -> str:
@@ -496,12 +532,21 @@ def parse_args():
     p.add_argument("--update-stats",  action="store_true", help="Write/update monitor_stats.yml with observed data")
     p.add_argument("--quality",       action="store_true", help="Run deep data-quality checks (slower)")
     p.add_argument("--fail-on-error", action="store_true", help="Exit with code 1 if any check fails")
+    p.add_argument(
+        "--upload-config",
+        action="store_true",
+        help="Upload local websites-config.yml to R2 (bootstrap CI), then exit",
+    )
     return p.parse_args()
 
 
 def main():
-    args   = parse_args()
-    config = load_config()
+    args = parse_args()
+
+    if args.upload_config:
+        r2_client, bucket = build_r2_client()
+        upload_config(r2_client, bucket)
+        return
 
     # Date range to inspect
     if args.date:
@@ -513,14 +558,16 @@ def main():
 
     log.info(f"Inspecting date(s): {[d.strftime('%Y-%m-%d') for d in dates_to_check]}")
 
+    # Connect to R2 (needed for file inspection and for config when not in repo)
+    r2_client, bucket = build_r2_client()
+    log.info(f"Connected to R2 bucket: {bucket}")
+
+    config = load_config(r2_client, bucket)
+
     # Build schema lookup: scraper_name → schema_entry
     schema_by_scraper = {
         e["scraper"]: e for e in config.get("excel_schema", [])
     }
-
-    # Connect to R2
-    r2_client, bucket = build_r2_client()
-    log.info(f"Connected to R2 bucket: {bucket}")
 
     # Load existing stats from R2 (for --update-stats mode)
     stats = load_existing_stats(r2_client, bucket) if args.update_stats else {}

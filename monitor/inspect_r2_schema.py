@@ -259,15 +259,15 @@ def r2_base_prefix(r2_path_raw: str) -> str:
 
 def excel_prefix_for_date(base: str, dt: datetime) -> str:
     """
-    Build the full R2 prefix for Excel files on a given date.
-    Pattern:  4sale-data/animals/year=2026/month=06/day=04/excel-files/
+    Build the R2 date-partition prefix for Excel discovery.
+    Pattern:  4sale-data/animals/year=2026/month=06/day=04/
+    Scans the whole day partition (excel-files/, excel_files/, or root).
     """
     return (
         f"{base}"
         f"/year={dt.year}"
         f"/month={dt.month:02d}"
-        f"/day={dt.day:02d}"
-        f"/excel-files/"
+        f"/day={dt.day:02d}/"
     )
 
 

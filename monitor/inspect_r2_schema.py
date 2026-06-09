@@ -258,15 +258,14 @@ def r2_base_prefix(r2_path_raw: str) -> str:
 
 
 def partition_date_for_data_date(dt: datetime) -> datetime:
-    """Scrapers save to save_date = listing date + 1 day (see scrape_date vs save_date in main.py)."""
+    """R2 folder uses save_date = listing date + 1 day (yesterday's listings → today's partition)."""
     return dt + timedelta(days=1)
 
 
 def excel_prefixes_for_date(base: str, dt: datetime) -> List[str]:
     """
     Build R2 date-partition prefixes for Excel discovery.
-    Most scrapers: year=2026/month=06/day=09/ (zero-padded save_date).
-    Property:      year=2026/month=6/day=9/   (unpadded) — try both forms.
+    Tries zero-padded (month=06/day=09) and unpadded (month=6/day=9) forms.
     """
     seen: set = set()
     prefixes: List[str] = []
@@ -614,9 +613,11 @@ def main():
 
         all_xlsx: List[Dict] = []
         seen_keys: set = set()
+        tried_prefixes: List[str] = []
         for dt in dates_to_check:
             part_dt = partition_date_for_data_date(dt)
             for prefix in excel_prefixes_for_date(r2_base, part_dt):
+                tried_prefixes.append(prefix)
                 for f in list_excel_files(r2_client, bucket, prefix):
                     if f["key"] in seen_keys:
                         continue
@@ -627,7 +628,13 @@ def main():
         scraper_result["files_found"] = len(all_xlsx)
 
         if not all_xlsx:
-            log.warning(f"  {scraper_name}: NO Excel files found under {r2_base}")
+            sample = ", ".join(tried_prefixes[:2])
+            extra  = f" (+{len(tried_prefixes) - 2} more)" if len(tried_prefixes) > 2 else ""
+            log.warning(
+                f"  {scraper_name}: NO Excel files found under {r2_base} "
+                f"for listing {dates_to_check[0].strftime('%Y-%m-%d')} "
+                f"(tried e.g. {sample}{extra})"
+            )
             scraper_result["all_passed"] = False
             all_results.append(scraper_result)
             full_report["scrapers"][scraper_name] = scraper_result

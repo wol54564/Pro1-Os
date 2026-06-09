@@ -498,8 +498,16 @@ def write_github_summary(results: List[Dict], run_date: str) -> None:
         icon   = PASS if r["all_passed"] else (MISS if r["files_found"] == 0 else FAIL)
         detail = ""
         if not r["all_passed"]:
-            failed = [c["name"] for f in r["file_results"] for c in f["checks"] if not c["passed"]]
-            detail = "<br>".join(failed[:5])
+            if r["files_found"] == 0:
+                detail = "no Excel files found"
+            else:
+                failed = [
+                    c["name"]
+                    for f in r["file_results"]
+                    for c in f.get("validation", {}).get("checks", [])
+                    if not c["passed"]
+                ]
+                detail = "<br>".join(failed[:5]) if failed else "validation failed"
         lines.append(
             f"| {r['scraper']} | {r['files_found']} | "
             f"{r['checks_passed']}/{r['checks_total']} | {icon} {detail} |"

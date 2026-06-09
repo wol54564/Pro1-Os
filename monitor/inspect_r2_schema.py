@@ -257,18 +257,26 @@ def r2_base_prefix(r2_path_raw: str) -> str:
     return path.strip("/")
 
 
-def excel_prefix_for_date(base: str, dt: datetime) -> str:
+def partition_date_for_data_date(dt: datetime) -> datetime:
+    """Scrapers save to save_date = listing date + 1 day (see scrape_date vs save_date in main.py)."""
+    return dt + timedelta(days=1)
+
+
+def excel_prefixes_for_date(base: str, dt: datetime) -> List[str]:
     """
-    Build the R2 date-partition prefix for Excel discovery.
-    Pattern:  4sale-data/animals/year=2026/month=06/day=04/
-    Scans the whole day partition (excel-files/, excel_files/, or root).
+    Build R2 date-partition prefixes for Excel discovery.
+    Most scrapers: year=2026/month=06/day=09/ (zero-padded save_date).
+    Property:      year=2026/month=6/day=9/   (unpadded) — try both forms.
     """
-    return (
-        f"{base}"
-        f"/year={dt.year}"
-        f"/month={dt.month:02d}"
-        f"/day={dt.day:02d}/"
-    )
+    seen: set = set()
+    prefixes: List[str] = []
+    for month in (f"{dt.month:02d}", str(dt.month)):
+        for day in (f"{dt.day:02d}", str(dt.day)):
+            prefix = f"{base}/year={dt.year}/month={month}/day={day}/"
+            if prefix not in seen:
+                seen.add(prefix)
+                prefixes.append(prefix)
+    return prefixes
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -605,12 +613,16 @@ def main():
         }
 
         all_xlsx: List[Dict] = []
+        seen_keys: set = set()
         for dt in dates_to_check:
-            prefix = excel_prefix_for_date(r2_base, dt)
-            found  = list_excel_files(r2_client, bucket, prefix)
-            for f in found:
-                f["date"] = dt.strftime("%Y-%m-%d")
-            all_xlsx.extend(found)
+            part_dt = partition_date_for_data_date(dt)
+            for prefix in excel_prefixes_for_date(r2_base, part_dt):
+                for f in list_excel_files(r2_client, bucket, prefix):
+                    if f["key"] in seen_keys:
+                        continue
+                    seen_keys.add(f["key"])
+                    f["date"] = dt.strftime("%Y-%m-%d")
+                    all_xlsx.append(f)
 
         scraper_result["files_found"] = len(all_xlsx)
 

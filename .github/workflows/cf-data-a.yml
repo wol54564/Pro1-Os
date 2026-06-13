@@ -1,13 +1,13 @@
 name: "CF-Data Batch A"
 
-# Mirrors Batch A but uses CF_Data/ (proxy.cheap rotating residential).
-# Proxy account: PC_PROXY_USER_1 / PC_PROXY_PASS_1
+# Mirrors Batch A but uses CF_Data/ with proxy.cheap rotating residential.
+# Credential rotates daily (offset 0): Sun→1, Mon→2, Tue→3, Wed→1, …
 # Scrapers: Animals, Bikes, Gifts, Camping, Property, New Car,
 #           Rest-Automotive-Part1, Jobs, Sport
 
 on:
   schedule:
-    - cron: '0 0 * * *'   
+    - cron: '0 2 * * *'   # 2 AM UTC = 5 AM Kuwait
   workflow_dispatch:
 
 concurrency:
@@ -20,14 +20,41 @@ env:
 
 jobs:
 
+  # ── Pick today's proxy account (offset 0) ───────────────────────────────────
+  select-credential:
+    name: Select proxy credential
+    runs-on: ubuntu-22.04
+    outputs:
+      account: ${{ steps.pick.outputs.account }}
+    steps:
+      - name: Pick account from day-of-week
+        id: pick
+        run: |
+          DOW=$(date +%w)                        # 0=Sun … 6=Sat
+          ACCOUNT=$(( (DOW % 3) + 1 ))           # offset 0 → 1/2/3
+          echo "account=$ACCOUNT" >> $GITHUB_OUTPUT
+          echo "Day=$DOW  →  Using proxy account $ACCOUNT"
+
+  # ── Scrape ──────────────────────────────────────────────────────────────────
   scrape:
-    name: "CF-Data Batch A — proxy.cheap account 1"
+    name: "CF-Data Batch A — scrape"
+    needs: select-credential
     runs-on: ubuntu-22.04
     env:
       PROXY_HOST: ${{ secrets.PC_PROXY_HOST }}
       PROXY_PORT: ${{ secrets.PC_PROXY_PORT }}
-      PROXY_USER: ${{ secrets.PC_PROXY_USER_1 }}
-      PROXY_PASS: ${{ secrets.PC_PROXY_PASS_1 }}
+      PROXY_USER: >-
+        ${{
+          needs.select-credential.outputs.account == '2' && secrets.PC_PROXY_USER_2 ||
+          needs.select-credential.outputs.account == '3' && secrets.PC_PROXY_USER_3 ||
+          secrets.PC_PROXY_USER_1
+        }}
+      PROXY_PASS: >-
+        ${{
+          needs.select-credential.outputs.account == '2' && secrets.PC_PROXY_PASS_2 ||
+          needs.select-credential.outputs.account == '3' && secrets.PC_PROXY_PASS_3 ||
+          secrets.PC_PROXY_PASS_1
+        }}
       CF_R2_ACCESS_KEY_ID:     ${{ secrets.CF_R2_ACCESS_KEY_ID }}
       CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
       CF_R2_ENDPOINT_URL:      ${{ secrets.CF_R2_ENDPOINT_URL }}
@@ -92,5 +119,5 @@ jobs:
         run: |
           echo "====================================="
           echo "CF-DATA BATCH A COMPLETE"
-          echo "Proxy account : PC_PROXY_USER_1"
+          echo "Proxy account: ${{ needs.select-credential.outputs.account }}"
           echo "====================================="

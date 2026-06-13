@@ -1,7 +1,7 @@
 name: "CF-Data Batch C-1"
 
 # Triggered automatically after CF-Data Batch B-2 completes.
-# Proxy account: PC_PROXY_USER_3 / PC_PROXY_PASS_3
+# Credential rotates daily (offset 2): Sun→3, Mon→1, Tue→2, Wed→3, …
 # Scrapers: Dalil
 # Triggers CF-Data Batch C-2 when done.
 
@@ -26,14 +26,41 @@ env:
 
 jobs:
 
+  # ── Pick today's proxy account (offset 2) ───────────────────────────────────
+  select-credential:
+    name: Select proxy credential
+    runs-on: ubuntu-22.04
+    outputs:
+      account: ${{ steps.pick.outputs.account }}
+    steps:
+      - name: Pick account from day-of-week
+        id: pick
+        run: |
+          DOW=$(date +%w)                        # 0=Sun … 6=Sat
+          ACCOUNT=$(( ((DOW + 2) % 3) + 1 ))    # offset 2 → 3/1/2
+          echo "account=$ACCOUNT" >> $GITHUB_OUTPUT
+          echo "Day=$DOW  →  Using proxy account $ACCOUNT"
+
+  # ── Scrape ──────────────────────────────────────────────────────────────────
   scrape:
-    name: "CF-Data Batch C-1 — proxy.cheap account 3"
+    name: "CF-Data Batch C-1 — scrape"
+    needs: select-credential
     runs-on: ubuntu-22.04
     env:
       PROXY_HOST: ${{ secrets.PC_PROXY_HOST }}
       PROXY_PORT: ${{ secrets.PC_PROXY_PORT }}
-      PROXY_USER: ${{ secrets.PC_PROXY_USER_3 }}
-      PROXY_PASS: ${{ secrets.PC_PROXY_PASS_3 }}
+      PROXY_USER: >-
+        ${{
+          needs.select-credential.outputs.account == '2' && secrets.PC_PROXY_USER_2 ||
+          needs.select-credential.outputs.account == '3' && secrets.PC_PROXY_USER_3 ||
+          secrets.PC_PROXY_USER_1
+        }}
+      PROXY_PASS: >-
+        ${{
+          needs.select-credential.outputs.account == '2' && secrets.PC_PROXY_PASS_2 ||
+          needs.select-credential.outputs.account == '3' && secrets.PC_PROXY_PASS_3 ||
+          secrets.PC_PROXY_PASS_1
+        }}
       CF_R2_ACCESS_KEY_ID:     ${{ secrets.CF_R2_ACCESS_KEY_ID }}
       CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
       CF_R2_ENDPOINT_URL:      ${{ secrets.CF_R2_ENDPOINT_URL }}
@@ -72,5 +99,5 @@ jobs:
         run: |
           echo "====================================="
           echo "CF-DATA BATCH C-1 COMPLETE"
-          echo "Proxy account : PC_PROXY_USER_3"
+          echo "Proxy account: ${{ needs.select-credential.outputs.account }}"
           echo "====================================="

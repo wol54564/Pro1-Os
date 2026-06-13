@@ -6,11 +6,11 @@ Proxy strategy
 Two proxy modes are supported, detected automatically from env vars at import:
 
   Mode A — Generic rotating residential (proxy.cheap, etc.)
-    Set PROXY_HOST + PROXY_PORT [+ PROXY_USER + PROXY_PASS]
+    Set PROXY_HOST + PROXY_PORT + PROXY_USER + PROXY_PASS
     or the single PROXY_URL variable.
-    SmartSession uses plain requests (better tunnel compatibility with HTTP
-    proxies — avoids the curl-56 connection-reset caused by curl_cffi's
-    custom TLS handshake inside the CONNECT tunnel).
+    SmartSession uses plain requests with socks5h:// scheme.
+    socks5h lets the proxy resolve DNS, which is required for
+    proxy.cheap rotating residential pools.
 
   Mode B — DataImpulse residential (legacy / backward-compatible)
     Set DATAIMPULSE_USER (including __cr.XX geo suffix) + DATAIMPULSE_PASS.
@@ -129,11 +129,15 @@ def _build_proxies() -> tuple[dict, bool]:
     user = os.environ.get("PROXY_USER", "").strip()
     pwd  = os.environ.get("PROXY_PASS", "").strip()
     if host and port:
+        # socks5h → proxy resolves DNS (required for proxy.cheap rotating residential).
+        # Override scheme with PROXY_SCHEME env var if needed (e.g. "http").
+        scheme = os.environ.get("PROXY_SCHEME", "socks5h").strip()
         if user and pwd:
-            proxy_url = f"http://{user}:{pwd}@{host}:{port}"
+            proxy_url = f"{scheme}://{user}:{pwd}@{host}:{port}"
+            logger.info(f"Proxy mode: generic (PROXY_HOST)  {scheme}://{host}:{port}  user={user}")
         else:
-            proxy_url = f"http://{host}:{port}"
-        logger.info(f"Proxy mode: generic (PROXY_HOST)  {host}:{port}  user={user or '(none)'}")
+            proxy_url = f"{scheme}://{host}:{port}"
+            logger.info(f"Proxy mode: generic (PROXY_HOST)  {scheme}://{host}:{port}  (no auth)")
         return {"http": proxy_url, "https": proxy_url}, True
 
     # ── Mode B: DataImpulse residential (curl_cffi) ───────────────────────────

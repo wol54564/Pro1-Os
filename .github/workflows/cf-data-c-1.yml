@@ -1,0 +1,76 @@
+name: "CF-Data Batch C-1"
+
+# Triggered automatically after CF-Data Batch B-2 completes.
+# Proxy account: PC_PROXY_USER_3 / PC_PROXY_PASS_3
+# Scrapers: Dalil
+# Triggers CF-Data Batch C-2 when done.
+
+on:
+  workflow_run:
+    workflows:
+      - "CF-Data Batch B-2"
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+concurrency:
+  group: cf-data-pipeline
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PYTHONUTF8: '1'
+
+jobs:
+
+  scrape:
+    name: "CF-Data Batch C-1 — proxy.cheap account 3"
+    runs-on: ubuntu-22.04
+    env:
+      PROXY_HOST: ${{ secrets.PC_PROXY_HOST }}
+      PROXY_PORT: ${{ secrets.PC_PROXY_PORT }}
+      PROXY_USER: ${{ secrets.PC_PROXY_USER_3 }}
+      PROXY_PASS: ${{ secrets.PC_PROXY_PASS_3 }}
+      CF_R2_ACCESS_KEY_ID:     ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+      CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+      CF_R2_ENDPOINT_URL:      ${{ secrets.CF_R2_ENDPOINT_URL }}
+      CF_R2_BUCKET_NAME:       ${{ secrets.CF_R2_BUCKET_NAME }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r CF_Data/requirements.txt
+
+      - name: Random gap after Batch B-2 (25–45 min stealth pause)
+        run: |
+          DELAY=$((RANDOM % 1200 + 1500))
+          echo "Waiting ${DELAY}s (~$(( DELAY / 60 )) min) before starting CF-Data Batch C-1..."
+          sleep $DELAY
+
+      - name: "[1/1] Dalil"
+        continue-on-error: true
+        run: cd CF_Data/Dalil && python main.py
+
+      - name: Trigger CF-Data Batch C-2
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run "cf-data-c-2.yml" --repo "${{ github.repository }}"
+
+      - name: CF-Data Batch C-1 summary
+        if: always()
+        run: |
+          echo "====================================="
+          echo "CF-DATA BATCH C-1 COMPLETE"
+          echo "Proxy account : PC_PROXY_USER_3"
+          echo "====================================="

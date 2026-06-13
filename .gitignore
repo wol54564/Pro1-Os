@@ -23,3 +23,6 @@ websites-config-template.yml
 prompts/excel-schema-prompt.md
 monitor_stats.yml
 prompts/monitor-prompt.md
+CFl_data/README.md
+test_animals_scrape.py
+CF_Data/README.md

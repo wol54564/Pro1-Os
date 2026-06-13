@@ -1,0 +1,144 @@
+name: "CF-Data Backfill"
+
+# Manual backfill for CF_Data scrapers.
+# Mirrors the existing backfill-c2.yml but uses CF_Data/backfill-c2/ and
+# proxy.cheap instead of DataImpulse.
+#
+# Usage: enter TARGET_DATE as YYYY-MM-DD.
+# The scrapers fetch TARGET_DATE - 1 day and save under TARGET_DATE in R2.
+# Example: enter 2026-06-10 → scrapes June 9 data, saves under June 10.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: >
+          Date to run AS (YYYY-MM-DD).
+          Data from the day BEFORE this date will be scraped.
+          Example: enter 2026-06-10 to recover June 9 data.
+        required: true
+        type: string
+      proxy_account:
+        description: >
+          proxy.cheap account to use (1, 2, or 3).
+          Defaults to account 1 if left blank.
+        required: false
+        default: '1'
+        type: choice
+        options: ['1', '2', '3']
+
+concurrency:
+  group: cf-data-backfill-${{ github.event.inputs.target_date }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PYTHONUTF8: '1'
+
+jobs:
+
+  # ── Validate date ─────────────────────────────────────────────────────────
+  validate:
+    name: Validate backfill date
+    runs-on: ubuntu-22.04
+    outputs:
+      scrape_date: ${{ steps.dates.outputs.scrape_date }}
+    steps:
+      - name: Compute and validate dates
+        id: dates
+        run: |
+          TARGET_DATE="${{ github.event.inputs.target_date }}"
+          if ! date -d "$TARGET_DATE" &>/dev/null; then
+            echo "ERROR: Invalid date '$TARGET_DATE'. Use YYYY-MM-DD." >&2
+            exit 1
+          fi
+          SCRAPE_DATE=$(date -d "$TARGET_DATE -1 day" +%Y-%m-%d)
+          echo "scrape_date=$SCRAPE_DATE" >> $GITHUB_OUTPUT
+          echo "============================================="
+          echo "CF-DATA BACKFILL"
+          echo "Save date   (TARGET_DATE) : $TARGET_DATE"
+          echo "Scrape date (day before)  : $SCRAPE_DATE"
+          echo "Proxy account             : ${{ github.event.inputs.proxy_account }}"
+          echo "============================================="
+
+  # ── Backfill scrape ───────────────────────────────────────────────────────
+  scrape:
+    name: "CF-Data backfill — ${{ github.event.inputs.target_date }}"
+    needs: validate
+    runs-on: ubuntu-22.04
+    env:
+      TARGET_DATE: ${{ github.event.inputs.target_date }}
+      # Proxy account selected from input (1, 2, or 3)
+      PROXY_HOST: ${{ secrets.PC_PROXY_HOST }}
+      PROXY_PORT: ${{ secrets.PC_PROXY_PORT }}
+      PROXY_USER: >-
+        ${{
+          github.event.inputs.proxy_account == '2' && secrets.PC_PROXY_USER_2 ||
+          github.event.inputs.proxy_account == '3' && secrets.PC_PROXY_USER_3 ||
+          secrets.PC_PROXY_USER_1
+        }}
+      PROXY_PASS: >-
+        ${{
+          github.event.inputs.proxy_account == '2' && secrets.PC_PROXY_PASS_2 ||
+          github.event.inputs.proxy_account == '3' && secrets.PC_PROXY_PASS_3 ||
+          secrets.PC_PROXY_PASS_1
+        }}
+      CF_R2_ACCESS_KEY_ID:     ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+      CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+      CF_R2_ENDPOINT_URL:      ${{ secrets.CF_R2_ENDPOINT_URL }}
+      CF_R2_BUCKET_NAME:       ${{ secrets.CF_R2_BUCKET_NAME }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r CF_Data/requirements.txt
+
+      - name: Show backfill parameters
+        run: |
+          echo "============================================="
+          echo "CF-DATA BACKFILL STARTING"
+          echo "Save date   (TARGET_DATE) : $TARGET_DATE"
+          echo "Scrape date (day before)  : ${{ needs.validate.outputs.scrape_date }}"
+          echo "Proxy account             : ${{ github.event.inputs.proxy_account }}"
+          echo "============================================="
+
+      - name: "[1/6] Automotive-Cars-and-Trucks"
+        continue-on-error: true
+        run: cd CF_Data/backfill-c2/Automotive-Cars-and-Trucks && python main.py
+
+      - name: "[2/6] Electronics"
+        continue-on-error: true
+        run: cd CF_Data/backfill-c2/Electronics && python main.py
+
+      - name: "[3/6] Wanted-Cars"
+        continue-on-error: true
+        run: cd CF_Data/backfill-c2/Wanted-Cars && python main.py
+
+      - name: "[4/6] Furniture"
+        continue-on-error: true
+        run: cd CF_Data/backfill-c2/Furniture && python main.py
+
+      - name: "[5/6] Commercials"
+        continue-on-error: true
+        run: cd CF_Data/backfill-c2/Commercials && python main.py
+
+      - name: "[6/6] Rest-Automotive-Part3"
+        continue-on-error: true
+        run: cd CF_Data/backfill-c2/Rest-Automotive-Part3 && python main.py
+
+      - name: CF-Data backfill summary
+        if: always()
+        run: |
+          echo "============================================="
+          echo "CF-DATA BACKFILL COMPLETE"
+          echo "Save date   (TARGET_DATE) : $TARGET_DATE"
+          echo "Scrape date (day before)  : ${{ needs.validate.outputs.scrape_date }}"
+          echo "Proxy account             : ${{ github.event.inputs.proxy_account }}"
+          echo "============================================="

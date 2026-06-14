@@ -32,6 +32,12 @@ on:
         type: boolean
         default: false
 
+  workflow_run:
+    workflows:
+      - "Batch C-2"
+    types:
+      - completed
+
 # ── One run at a time ────────────────────────────────────────────────────────
 concurrency:
   group: schema-monitor

@@ -43,6 +43,16 @@ logging.basicConfig(
 log = logging.getLogger("monitor-hub")
 
 
+def _scraper_results(report: Dict) -> List[Dict]:
+    """Normalize scrapers field — dict (Pro1-Os) or list (other repos)."""
+    scrapers = report.get("scrapers", {})
+    if isinstance(scrapers, list):
+        return scrapers
+    if isinstance(scrapers, dict):
+        return list(scrapers.values())
+    return []
+
+
 def fetch_report(client, bucket: str, site: Dict, run_date: str) -> Optional[Dict]:
     key = report_r2_key(site, run_date)
     try:
@@ -77,10 +87,10 @@ def summarize_site(report: Optional[Dict], site: Dict, run_date: str) -> Dict:
             "alert_count": 0,
         }
 
-    scrapers = report.get("scrapers", {})
-    total    = len(scrapers)
-    passed   = sum(1 for s in scrapers.values() if s.get("all_passed"))
-    alerts   = report.get("alert_count", len(report.get("alerts", [])))
+    results = _scraper_results(report)
+    total   = len(results)
+    passed  = sum(1 for s in results if s.get("all_passed"))
+    alerts  = report.get("alert_count", len(report.get("alerts", [])))
 
     return {
         **base,

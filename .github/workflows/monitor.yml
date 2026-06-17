@@ -32,12 +32,6 @@ on:
         type: boolean
         default: false
 
-  workflow_run:
-    workflows:
-      - "Batch C-2"
-    types:
-      - completed
-
 # ── One run at a time ────────────────────────────────────────────────────────
 concurrency:
   group: schema-monitor
@@ -53,10 +47,9 @@ jobs:
   daily-check:
     name: "Daily schema validation"
     runs-on: ubuntu-22.04
-    # Runs on Mon–Sat schedule, manual dispatch, or after Batch C-2 completes
+    # Runs on Mon–Sat schedule, manual dispatch, or when triggered by Batch C-2
     if: >
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'workflow_run' ||
       (github.event_name == 'schedule' && github.event.schedule == '0 8 * * 1-6')
 
     env:

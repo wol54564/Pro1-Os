@@ -9,13 +9,14 @@ Layout in bucket (default prefix: monitor-sites/):
 Each site's scraper data + validation artifacts stay under its data prefix:
   {r2_prefix}/monitor/websites-config.yml
   {r2_prefix}/monitor/monitor_stats.yml
-  {r2_prefix}/monitor/{YYYY-MM-DD}/report.json
+  {r2_prefix}/monitor/{partition-date}/report.json   ← partition date = listing date + 1 day
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple
 
 import boto3
@@ -68,8 +69,20 @@ def monitor_data_keys(site: Dict) -> Dict[str, str]:
     }
 
 
-def report_r2_key(site: Dict, run_date: str) -> str:
-    return f"{monitor_data_keys(site)['base']}/{run_date}/report.json"
+def report_r2_key(site: Dict, partition_date: str) -> str:
+    """R2 key for daily report — *partition_date* matches scraper save folders (listing + 1 day)."""
+    return f"{monitor_data_keys(site)['base']}/{partition_date}/report.json"
+
+
+def partition_date_for_listing(listing_dt: datetime) -> datetime:
+    """R2 folder uses save_date = listing date + 1 day."""
+    return listing_dt + timedelta(days=1)
+
+
+def partition_date_str_for_listing(listing_date: str) -> str:
+    """YYYY-MM-DD partition path for a listing-date string."""
+    listing_dt = datetime.strptime(listing_date, "%Y-%m-%d")
+    return partition_date_for_listing(listing_dt).strftime("%Y-%m-%d")
 
 
 def resolve_site_folder(explicit: Optional[str] = None) -> str:

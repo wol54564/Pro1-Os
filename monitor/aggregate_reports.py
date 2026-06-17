@@ -7,10 +7,10 @@ Reads site list from R2:
   monitor-sites/registry.yml
 
 Each site's daily report:
-  {r2_prefix}/monitor/YYYY-MM-DD/report.json
+  {r2_prefix}/monitor/{partition-date}/report.json   (partition = listing date + 1 day)
 
 Writes merged hub output to R2:
-  monitor-sites/hub/YYYY-MM-DD/all-sites.json
+  monitor-sites/hub/{partition-date}/all-sites.json
 
 Usage
 -----
@@ -31,6 +31,7 @@ from monitor_r2 import (
     build_r2_client,
     hub_merged_r2_key,
     load_registry_from_r2,
+    partition_date_for_listing,
     put_bytes,
     report_r2_key,
 )
@@ -53,8 +54,8 @@ def _scraper_results(report: Dict) -> List[Dict]:
     return []
 
 
-def fetch_report(client, bucket: str, site: Dict, run_date: str) -> Optional[Dict]:
-    key = report_r2_key(site, run_date)
+def fetch_report(client, bucket: str, site: Dict, partition_date: str) -> Optional[Dict]:
+    key = report_r2_key(site, partition_date)
     try:
         resp = client.get_object(Bucket=bucket, Key=key)
         data = json.loads(resp["Body"].read().decode("utf-8"))
@@ -68,7 +69,7 @@ def fetch_report(client, bucket: str, site: Dict, run_date: str) -> Optional[Dic
         return None
 
 
-def summarize_site(report: Optional[Dict], site: Dict, run_date: str) -> Dict:
+def summarize_site(report: Optional[Dict], site: Dict, partition_date: str) -> Dict:
     base = {
         "folder":       site.get("folder"),
         "site_id":      site.get("site_id"),
@@ -76,7 +77,7 @@ def summarize_site(report: Optional[Dict], site: Dict, run_date: str) -> Dict:
         "website":      site.get("website"),
         "country":      site.get("country"),
         "repo":         site.get("repo"),
-        "run_date":     run_date,
+        "run_date":     partition_date,
     }
     if not report:
         return {
@@ -98,7 +99,8 @@ def summarize_site(report: Optional[Dict], site: Dict, run_date: str) -> Dict:
         "website":         report.get("website") or site.get("website"),
         "country":         report.get("country") or site.get("country"),
         "repo":            report.get("repo") or site.get("repo"),
-        "run_date":        report.get("run_date", run_date),
+        "run_date":        report.get("run_date", partition_date),
+        "inspect_date":    report.get("inspect_date"),
         "status":          "ok" if passed == total and total > 0 else "failed",
         "scrapers_total":  total,
         "scrapers_passed": passed,
@@ -116,7 +118,11 @@ def upload_merged(client, bucket: str, run_date: str, merged: Dict, root: str = 
 
 def parse_args():
     p = argparse.ArgumentParser(description="Merge all website monitor reports for the hub dashboard.")
-    p.add_argument("--date", default=None, help="YYYY-MM-DD (default: yesterday UTC)")
+    p.add_argument(
+        "--date",
+        default=None,
+        help="Listing date to aggregate (YYYY-MM-DD). Default: yesterday UTC → today's partition folder.",
+    )
     return p.parse_args()
 
 
@@ -134,18 +140,23 @@ def main():
         sys.exit(1)
 
     if args.date:
-        run_date = args.date
+        listing_dt = datetime.strptime(args.date, "%Y-%m-%d")
     else:
-        run_date = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+        listing_dt = datetime.utcnow() - timedelta(days=1)
+    partition_date = partition_date_for_listing(listing_dt).strftime("%Y-%m-%d")
+    listing_date   = listing_dt.strftime("%Y-%m-%d")
 
     bucket = os.environ.get("CF_R2_BUCKET_NAME") or hub_cfg.get("r2_bucket") or env_bucket
 
-    log.info(f"Aggregating {len(sites)} sites for {run_date} · hub prefix {root}/hub/ …")
+    log.info(
+        f"Aggregating {len(sites)} sites for listing {listing_date} "
+        f"· partition {partition_date} · hub prefix {root}/hub/ …"
+    )
 
     site_summaries = []
     for site in sites:
-        report = fetch_report(client, bucket, site, run_date)
-        site_summaries.append(summarize_site(report, site, run_date))
+        report = fetch_report(client, bucket, site, partition_date)
+        site_summaries.append(summarize_site(report, site, partition_date))
 
     sites_ok      = sum(1 for s in site_summaries if s["status"] == "ok")
     sites_missing = sum(1 for s in site_summaries if s["status"] == "missing")
@@ -153,7 +164,8 @@ def main():
     total_alerts  = sum(s["alert_count"] for s in site_summaries)
 
     merged = {
-        "run_date":      run_date,
+        "run_date":      partition_date,
+        "inspect_date":  listing_date,
         "generated_at":  datetime.utcnow().isoformat() + "Z",
         "hub_prefix":    root,
         "sites_total":   len(sites),
@@ -164,7 +176,7 @@ def main():
         "sites":         site_summaries,
     }
 
-    key = upload_merged(client, bucket, run_date, merged, root)
+    key = upload_merged(client, bucket, partition_date, merged, root)
 
     print(f"\n{'SITE':<22} {'STATUS':<10} {'SCRAPERS':<12} ALERTS")
     print("-" * 55)

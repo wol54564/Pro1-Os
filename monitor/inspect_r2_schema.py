@@ -5,7 +5,8 @@ Reads every Excel file uploaded by the scraper pipeline from Cloudflare R2,
 validates each file against the schema defined in websites-config.yml, and:
 
   1. Prints a pass/fail table for every scraper (today's date by default).
-  2. Writes a JSON report back to R2  → {r2_prefix}/monitor/YYYY-MM-DD/report.json
+  2. Writes a JSON report back to R2  → {r2_prefix}/monitor/{partition-date}/report.json
+     (partition date = listing date + 1 day, same as scraper Excel folders)
   3. Writes/updates monitor_stats.yml in the repo with observed real statistics
      (min/max row counts, actual file sizes, actual column sets, actual sheet names).
   4. Emits a GitHub Actions step-summary  ($GITHUB_STEP_SUMMARY).
@@ -57,6 +58,7 @@ from monitor_r2 import (
     build_r2_client,
     load_site_config_from_r2,
     monitor_data_keys,
+    partition_date_for_listing,
     report_r2_key,
     resolve_site_folder,
 )
@@ -252,7 +254,7 @@ def r2_base_prefix(r2_path_raw: str) -> str:
 
 def partition_date_for_data_date(dt: datetime) -> datetime:
     """R2 folder uses save_date = listing date + 1 day (yesterday's listings → today's partition)."""
-    return dt + timedelta(days=1)
+    return partition_date_for_listing(dt)
 
 
 def excel_prefixes_for_date(base: str, dt: datetime) -> List[str]:
@@ -777,6 +779,114 @@ FAIL = "❌"
 WARN = "⚠️"
 MISS = "🚫"
 
+# Max failed-check lines logged per scraper (use --verbose for all)
+_DEFAULT_MAX_FAILURE_LOGS = 25
+
+
+def collect_file_failures(scraper_result: Dict) -> List[Dict]:
+    """Flatten failed validation + quality checks for one scraper."""
+    failures: List[Dict] = []
+    for fr in scraper_result.get("file_results", []):
+        file_key = fr.get("file_key") or fr.get("validation", {}).get("file", "?")
+        file_name = file_key.split("/")[-1] if file_key else "?"
+
+        for check in fr.get("validation", {}).get("checks", []):
+            if not check["passed"]:
+                failures.append({
+                    "file": file_name,
+                    "file_key": file_key,
+                    "check": check["name"],
+                    "detail": check.get("detail", ""),
+                    "kind": "validation",
+                })
+
+        if fr.get("readable") and fr.get("sheets"):
+            for sheet in fr["sheets"]:
+                q = sheet.get("quality")
+                if not q:
+                    continue
+                if q.get("null_id_pct", 0) >= 5:
+                    failures.append({
+                        "file": file_name,
+                        "file_key": file_key,
+                        "check": "null_id_pct",
+                        "detail": f"Sheet '{sheet['name']}': {q['null_id_pct']}% null IDs",
+                        "kind": "quality",
+                    })
+                if q.get("stale_date_pct", 0) >= 20:
+                    failures.append({
+                        "file": file_name,
+                        "file_key": file_key,
+                        "check": "stale_date_pct",
+                        "detail": f"Sheet '{sheet['name']}': {q['stale_date_pct']}% stale dates",
+                        "kind": "quality",
+                    })
+    return failures
+
+
+def log_scraper_failures(
+    scraper_name: str,
+    scraper_result: Dict,
+    max_lines: Optional[int] = _DEFAULT_MAX_FAILURE_LOGS,
+) -> None:
+    """Log which checks failed and why (per file)."""
+    if scraper_result["files_found"] == 0:
+        return
+
+    failures = collect_file_failures(scraper_result)
+    if not failures:
+        return
+
+    passed = scraper_result["checks_passed"]
+    total = scraper_result["checks_total"]
+    log.warning(
+        f"  {scraper_name} — {len(failures)} failed check(s) "
+        f"({passed}/{total} passed):"
+    )
+    show = failures if max_lines is None else failures[:max_lines]
+    for item in show:
+        detail = item["detail"]
+        detail_bit = f": {detail}" if detail else ""
+        log.warning(f"    • {item['file']} → {item['check']}{detail_bit}")
+    if max_lines is not None and len(failures) > max_lines:
+        log.warning(f"    … +{len(failures) - max_lines} more failure(s) (use --verbose for all)")
+
+
+def print_failure_summary(results: List[Dict]) -> None:
+    """Print a cross-scraper breakdown of the most common failure types."""
+    by_check: Dict[str, List[str]] = defaultdict(list)
+    no_files: List[str] = []
+
+    for r in results:
+        if r["files_found"] == 0:
+            no_files.append(r["scraper"])
+            continue
+        for item in collect_file_failures(r):
+            by_check[item["check"]].append(r["scraper"])
+
+    if not no_files and not by_check:
+        return
+
+    print("\n" + "-" * 70)
+    print("FAILURE BREAKDOWN")
+    print("-" * 70)
+
+    if no_files:
+        print(f"\nNo Excel files ({len(no_files)}):")
+        for name in no_files:
+            print(f"  • {name}")
+
+    if by_check:
+        print(f"\nFailed checks by type ({sum(len(v) for v in by_check.values())} total):")
+        ranked = sorted(by_check.items(), key=lambda kv: len(kv[1]), reverse=True)
+        for check_name, scrapers in ranked[:20]:
+            unique = sorted(set(scrapers))
+            sample = ", ".join(unique[:6])
+            extra = f" (+{len(unique) - 6} more)" if len(unique) > 6 else ""
+            print(f"  • {check_name}: {len(scrapers)}× in {sample}{extra}")
+
+    print("-" * 70 + "\n")
+
 
 def print_summary_table(results: List[Dict]) -> None:
     """Print a human-readable table to stdout."""
@@ -797,13 +907,13 @@ def print_summary_table(results: List[Dict]) -> None:
     print(f"\nTotal: {total_pass}/{len(results)} scrapers fully passed\n")
 
 
-def write_github_summary(results: List[Dict], run_date: str) -> None:
+def write_github_summary(results: List[Dict], listing_date: str, report_date: str) -> None:
     """Write markdown to $GITHUB_STEP_SUMMARY if available."""
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if not summary_path:
         return
     lines = [
-        f"## R2 Schema Monitor — {run_date}\n",
+        f"## R2 Schema Monitor — listings {listing_date} (saved under {report_date})\n",
         "| Scraper | Files | Checks | Status |",
         "|---------|-------|--------|--------|",
     ]
@@ -814,13 +924,18 @@ def write_github_summary(results: List[Dict], run_date: str) -> None:
             if r["files_found"] == 0:
                 detail = "no Excel files found"
             else:
-                failed = [
-                    c["name"]
-                    for f in r["file_results"]
-                    for c in f.get("validation", {}).get("checks", [])
-                    if not c["passed"]
-                ]
-                detail = "<br>".join(failed[:5]) if failed else "validation failed"
+                failed_bits = []
+                for f in r["file_results"]:
+                    file_name = (f.get("file_key") or "?").split("/")[-1]
+                    for c in f.get("validation", {}).get("checks", []):
+                        if not c["passed"]:
+                            bit = c["name"]
+                            if c.get("detail"):
+                                bit += f" ({c['detail']})"
+                            failed_bits.append(f"{file_name}: {bit}")
+                detail = "<br>".join(failed_bits[:8]) if failed_bits else "validation failed"
+                if len(failed_bits) > 8:
+                    detail += f"<br>… +{len(failed_bits) - 8} more"
         lines.append(
             f"| {r['scraper']} | {r['files_found']} | "
             f"{r['checks_passed']}/{r['checks_total']} | {icon} {detail} |"
@@ -854,9 +969,9 @@ def write_github_alert_summary(alerts: List[Dict], run_date: str) -> None:
         fh.write("\n".join(lines))
 
 
-def upload_report(client, bucket: str, report: Dict, run_date: str, site: Dict) -> None:
-    """Upload the JSON report to R2."""
-    key  = report_r2_key(site, run_date)
+def upload_report(client, bucket: str, report: Dict, partition_date: str, site: Dict) -> None:
+    """Upload the JSON report to R2 under the partition date (matches data folders)."""
+    key  = report_r2_key(site, partition_date)
     body = json.dumps(report, ensure_ascii=False, indent=2, default=str).encode()
     try:
         client.put_object(Bucket=bucket, Key=key, Body=body, ContentType="application/json")
@@ -875,6 +990,7 @@ def parse_args():
     p.add_argument("--days-lookback", type=int, default=1, help="How many days to scan (default: 1 = yesterday only)")
     p.add_argument("--update-stats",  action="store_true", help="Write/update monitor_stats.yml with observed data")
     p.add_argument("--quality",       action="store_true", help="Run deep data-quality checks (slower)")
+    p.add_argument("--verbose",     action="store_true", help="Log every failed check (no per-scraper cap)")
     p.add_argument("--fail-on-error", action="store_true", help="Exit with code 1 if any check fails")
     p.add_argument("--no-alert",      action="store_true", help="Skip webhook alerts even if URL is configured")
     p.add_argument(
@@ -921,9 +1037,13 @@ def main():
     else:
         end_date   = datetime.utcnow() - timedelta(days=1)   # yesterday UTC
     dates_to_check = [end_date - timedelta(days=i) for i in range(args.days_lookback)]
-    run_date_str   = end_date.strftime("%Y-%m-%d")
+    listing_date_str = end_date.strftime("%Y-%m-%d")
+    report_date_str  = partition_date_for_data_date(end_date).strftime("%Y-%m-%d")
 
-    log.info(f"Inspecting date(s): {[d.strftime('%Y-%m-%d') for d in dates_to_check]}")
+    log.info(
+        f"Inspecting listing date(s): {[d.strftime('%Y-%m-%d') for d in dates_to_check]} "
+        f"· report → monitor/{report_date_str}/report.json"
+    )
 
     log.info(f"Connected to R2 bucket: {bucket}")
     log.info(f"Site folder: {site.get('folder')} · data prefix: {keys['base']}")
@@ -944,7 +1064,8 @@ def main():
 
     all_results  = []
     full_report  = {
-        "run_date":  run_date_str,
+        "run_date":     report_date_str,
+        "inspect_date": listing_date_str,
         "folder":    site.get("folder"),
         "site_id":   site.get("site_id"),
         "website":   meta.get("website") or site.get("website"),
@@ -994,12 +1115,14 @@ def main():
         scraper_result["files_found"] = len(all_xlsx)
 
         if not all_xlsx:
+            listing_date = dates_to_check[0].strftime("%Y-%m-%d")
+            partition_date = partition_date_for_data_date(dates_to_check[0]).strftime("%Y-%m-%d")
             sample = ", ".join(tried_prefixes[:2])
             extra  = f" (+{len(tried_prefixes) - 2} more)" if len(tried_prefixes) > 2 else ""
             log.warning(
                 f"  {scraper_name}: NO Excel files found under {r2_base} "
-                f"for listing {dates_to_check[0].strftime('%Y-%m-%d')} "
-                f"(tried e.g. {sample}{extra})"
+                f"for listing {listing_date} (R2 partition day={partition_date}); "
+                f"tried e.g. {sample}{extra}"
             )
             scraper_result["all_passed"] = False
             all_results.append(scraper_result)
@@ -1064,16 +1187,23 @@ def main():
             f"{scraper_result['files_found']} file(s), "
             f"{scraper_result['checks_passed']}/{scraper_result['checks_total']} checks"
         )
+        if not scraper_result["all_passed"]:
+            log_scraper_failures(
+                scraper_name,
+                scraper_result,
+                max_lines=None if args.verbose else _DEFAULT_MAX_FAILURE_LOGS,
+            )
 
     # ── Outputs ───────────────────────────────────────────────────────────────
-    alerts = collect_alerts(all_results, run_date_str)
+    alerts = collect_alerts(all_results, listing_date_str)
     full_report["alerts"] = alerts
     full_report["alert_count"] = len(alerts)
 
     print_summary_table(all_results)
-    write_github_summary(all_results, run_date_str)
-    write_github_alert_summary(alerts, run_date_str)
-    upload_report(r2_client, bucket, full_report, run_date_str, site)
+    print_failure_summary(all_results)
+    write_github_summary(all_results, listing_date_str, report_date_str)
+    write_github_alert_summary(alerts, listing_date_str)
+    upload_report(r2_client, bucket, full_report, report_date_str, site)
 
     if args.update_stats:
         save_stats(r2_client, bucket, stats, keys["stats"])
@@ -1083,7 +1213,7 @@ def main():
         webhook_url = os.environ.get("MONITOR_ALERT_WEBHOOK_URL", "").strip() or None
         try:
             dispatch_alerts(
-                alerts, all_results, run_date_str, alert_cfg, webhook_url, site, meta
+                alerts, all_results, listing_date_str, alert_cfg, webhook_url, site, meta
             )
         except Exception as exc:
             log.error(f"Alert dispatch error (non-fatal): {exc}")

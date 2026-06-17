@@ -26,3 +26,5 @@ prompts/monitor-prompt.md
 CFl_data/README.md
 test_animals_scrape.py
 CF_Data/README.md
+.github/workflows/upload-monitor-bootstrap.yml
+monitor/n8n-email-alert-workflow.json

@@ -53,16 +53,19 @@ jobs:
   daily-check:
     name: "Daily schema validation"
     runs-on: ubuntu-22.04
-    # Runs on Mon–Sat schedule (cron '0 8 * * 1-6') or manual dispatch
+    # Runs on Mon–Sat schedule, manual dispatch, or after Batch C-2 completes
     if: >
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'workflow_run' ||
       (github.event_name == 'schedule' && github.event.schedule == '0 8 * * 1-6')
 
     env:
-      CF_R2_ACCESS_KEY_ID:     ${{ secrets.CF_R2_ACCESS_KEY_ID }}
-      CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
-      CF_R2_ENDPOINT_URL:      ${{ secrets.CF_R2_ENDPOINT_URL }}
-      CF_R2_BUCKET_NAME:       ${{ secrets.CF_R2_BUCKET_NAME }}
+      CF_R2_ACCESS_KEY_ID:       ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+      CF_R2_SECRET_ACCESS_KEY:   ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+      CF_R2_ENDPOINT_URL:        ${{ secrets.CF_R2_ENDPOINT_URL }}
+      CF_R2_BUCKET_NAME:         ${{ secrets.CF_R2_BUCKET_NAME }}
+      MONITOR_SITE_SLUG:         4sale
+      MONITOR_ALERT_WEBHOOK_URL: ${{ secrets.MONITOR_ALERT_WEBHOOK_URL }}
 
     steps:
       - name: Checkout repository
@@ -130,10 +133,12 @@ jobs:
       github.event_name == 'schedule' && github.event.schedule == '0 9 * * 0'
 
     env:
-      CF_R2_ACCESS_KEY_ID:     ${{ secrets.CF_R2_ACCESS_KEY_ID }}
-      CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
-      CF_R2_ENDPOINT_URL:      ${{ secrets.CF_R2_ENDPOINT_URL }}
-      CF_R2_BUCKET_NAME:       ${{ secrets.CF_R2_BUCKET_NAME }}
+      CF_R2_ACCESS_KEY_ID:       ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+      CF_R2_SECRET_ACCESS_KEY:   ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+      CF_R2_ENDPOINT_URL:        ${{ secrets.CF_R2_ENDPOINT_URL }}
+      CF_R2_BUCKET_NAME:         ${{ secrets.CF_R2_BUCKET_NAME }}
+      MONITOR_SITE_SLUG:         4sale
+      MONITOR_ALERT_WEBHOOK_URL: ${{ secrets.MONITOR_ALERT_WEBHOOK_URL }}
 
     steps:
       - name: Checkout repository

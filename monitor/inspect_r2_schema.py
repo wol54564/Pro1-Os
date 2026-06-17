@@ -5,10 +5,11 @@ Reads every Excel file uploaded by the scraper pipeline from Cloudflare R2,
 validates each file against the schema defined in websites-config.yml, and:
 
   1. Prints a pass/fail table for every scraper (today's date by default).
-  2. Writes a JSON report back to R2  → 4sale-data/monitor/YYYY-MM-DD/report.json
+  2. Writes a JSON report back to R2  → {r2_prefix}/monitor/YYYY-MM-DD/report.json
   3. Writes/updates monitor_stats.yml in the repo with observed real statistics
      (min/max row counts, actual file sizes, actual column sets, actual sheet names).
   4. Emits a GitHub Actions step-summary  ($GITHUB_STEP_SUMMARY).
+  5. Fires webhook alerts when checks fail (MONITOR_ALERT_WEBHOOK_URL).
 
 Usage
 -----
@@ -16,11 +17,21 @@ Usage
   python monitor/inspect_r2_schema.py --date 2026-06-04
   python monitor/inspect_r2_schema.py --update-stats           # also write monitor_stats.yml
   python monitor/inspect_r2_schema.py --days-lookback 7        # sample last 7 days for stats
+  python monitor/inspect_r2_schema.py --upload-config          # publish websites-config.yml to R2
+  python monitor/inspect_r2_schema.py --upload-stats PATH      # bootstrap monitor_stats.yml in R2
+
+Site identity is read from R2 (not the repo):
+  monitor-sites/{MONITOR_SITE_SLUG}/site.yml
 
 Required env vars
 -----------------
   CF_R2_ACCESS_KEY_ID, CF_R2_SECRET_ACCESS_KEY,
   CF_R2_ENDPOINT_URL,  CF_R2_BUCKET_NAME
+  MONITOR_SITE_SLUG    — folder name under monitor-sites/ (e.g. 4sale, boshamlan)
+
+Optional env vars
+-----------------
+  MONITOR_ALERT_WEBHOOK_URL  — n8n / Slack / Discord / Telegram webhook for failure alerts
 """
 
 import argparse
@@ -31,6 +42,8 @@ import logging
 import os
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -39,6 +52,13 @@ from typing import Any, Dict, List, Optional, Tuple
 import openpyxl
 import pandas as pd
 import yaml
+
+from monitor_r2 import (
+    load_site_config_from_r2,
+    monitor_data_keys,
+    report_r2_key,
+    resolve_site_folder,
+)
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -51,10 +71,6 @@ log = logging.getLogger("monitor")
 # ── Paths ─────────────────────────────────────────────────────────────────────
 REPO_ROOT   = Path(__file__).resolve().parent.parent
 CONFIG_FILE = REPO_ROOT / "websites-config.yml"
-
-# Config and stats live in R2 for CI; local file is used when present (dev).
-CONFIG_R2_KEY = "4sale-data/monitor/websites-config.yml"
-STATS_R2_KEY  = "4sale-data/monitor/monitor_stats.yml"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -205,32 +221,33 @@ def check_data_quality(raw: bytes, sheet_name: str) -> Dict:
 # CONFIG LOADING
 # ══════════════════════════════════════════════════════════════════════════════
 
-def load_config(client=None, bucket: Optional[str] = None) -> Dict:
+def load_config(client=None, bucket: Optional[str] = None, config_key: Optional[str] = None) -> Dict:
     """Load config from the local file (dev) or R2 (CI when the file is gitignored)."""
     if CONFIG_FILE.exists():
         with open(CONFIG_FILE, encoding="utf-8") as fh:
             log.info(f"Loaded config from {CONFIG_FILE}")
             return yaml.safe_load(fh)
 
-    if client and bucket:
+    if client and bucket and config_key:
         try:
-            resp = client.get_object(Bucket=bucket, Key=CONFIG_R2_KEY)
+            resp = client.get_object(Bucket=bucket, Key=config_key)
             raw  = resp["Body"].read().decode("utf-8")
-            log.info(f"Loaded config from r2://{bucket}/{CONFIG_R2_KEY}")
+            log.info(f"Loaded config from r2://{bucket}/{config_key}")
             return yaml.safe_load(raw)
         except client.exceptions.NoSuchKey:
-            log.debug(f"No config at r2://{bucket}/{CONFIG_R2_KEY}")
+            log.debug(f"No config at r2://{bucket}/{config_key}")
         except Exception as exc:
             log.warning(f"Could not load config from R2: {exc}")
 
+    key_hint = config_key or "{r2_prefix}/monitor/websites-config.yml"
     raise FileNotFoundError(
         f"{CONFIG_FILE.name} not found locally and not available in R2 "
-        f"at {CONFIG_R2_KEY}. Create the file locally, then run with "
+        f"at {key_hint}. Create the file locally, then run with "
         f"--upload-config to publish it to R2 for CI."
     )
 
 
-def upload_config(client, bucket: str) -> None:
+def upload_config(client, bucket: str, config_key: str) -> None:
     """Upload the local websites-config.yml to R2 for GitHub Actions."""
     if not CONFIG_FILE.exists():
         raise FileNotFoundError(f"Cannot upload — {CONFIG_FILE} does not exist.")
@@ -238,11 +255,11 @@ def upload_config(client, bucket: str) -> None:
     body = CONFIG_FILE.read_bytes()
     client.put_object(
         Bucket=bucket,
-        Key=CONFIG_R2_KEY,
+        Key=config_key,
         Body=body,
         ContentType="text/yaml",
     )
-    log.info(f"Config uploaded → r2://{bucket}/{CONFIG_R2_KEY}")
+    log.info(f"Config uploaded → r2://{bucket}/{config_key}")
 
 
 def r2_base_prefix(r2_path_raw: str) -> str:
@@ -371,6 +388,319 @@ def validate_file(inspected: Dict, schema_entry: Dict) -> Dict:
     return {"passed": passed, "checks": checks}
 
 
+def validate_observed_floor(
+    inspected: Dict,
+    scraper_name: str,
+    alert_cfg: Dict,
+) -> Dict:
+    """Compare file size against per-scraper floors derived from real monitor_stats."""
+    checks = []
+    floors = alert_cfg.get("observed_min_file_size_kb", {})
+    floor_kb = floors.get(scraper_name)
+    if floor_kb is None:
+        return {"passed": True, "checks": checks}
+
+    size_kb = inspected.get("size_bytes", 0) / 1024
+    passed = size_kb >= floor_kb
+    checks.append({
+        "name": "observed_file_size_floor",
+        "passed": passed,
+        "detail": f"{size_kb:.1f} KB (observed floor {floor_kb} KB)",
+    })
+    return {"passed": passed, "checks": checks}
+
+
+def validate_trends(
+    inspected: Dict,
+    scraper_name: str,
+    stats_entry: Optional[Dict],
+    trend_cfg: Dict,
+) -> Dict:
+    """
+    Compare today's file against historical monitor_stats.yml baselines.
+    Skipped until min_observed_days of history exist for the scraper.
+    """
+    checks = []
+    if not stats_entry:
+        return {"passed": True, "checks": checks}
+
+    min_days = trend_cfg.get("min_observed_days", 3)
+    if len(stats_entry.get("observed_dates", [])) < min_days:
+        return {"passed": True, "checks": checks}
+
+    row_min_pct = trend_cfg.get("min_row_pct_of_hist_min", 30) / 100.0
+    row_max_pct = trend_cfg.get("max_row_pct_of_hist_max", 300) / 100.0
+    size_min_pct = trend_cfg.get("min_file_size_pct_of_hist_min", 50) / 100.0
+
+    size_kb = inspected.get("size_bytes", 0) / 1024
+    hist_size_min = stats_entry.get("file_size_kb", {}).get("min")
+    if hist_size_min is not None:
+        threshold = hist_size_min * size_min_pct
+        passed = size_kb >= threshold
+        checks.append({
+            "name": "trend_file_size",
+            "passed": passed,
+            "detail": f"{size_kb:.1f} KB vs {threshold:.1f} KB ({size_min_pct:.0%} of hist min {hist_size_min} KB)",
+        })
+
+    sheet_stats = stats_entry.get("sheets", {})
+    for sheet in inspected.get("sheets", []):
+        sname = sheet["name"]
+        if sname == "Info":
+            continue
+        rc = sheet["row_count"]
+        sh = sheet_stats.get(sname, {}).get("row_count", {})
+        hist_min = sh.get("min")
+        hist_max = sh.get("max")
+
+        if hist_min is not None and hist_min > 0:
+            floor = max(1, int(hist_min * row_min_pct))
+            passed = rc >= floor
+            checks.append({
+                "name": f"trend_rows_low_{sname[:18]}",
+                "passed": passed,
+                "detail": f"{rc} rows vs floor {floor} ({row_min_pct:.0%} of hist min {hist_min})",
+            })
+
+        if hist_max is not None and hist_max > 0:
+            ceiling = int(hist_max * row_max_pct)
+            passed = rc <= ceiling
+            checks.append({
+                "name": f"trend_rows_high_{sname[:18]}",
+                "passed": passed,
+                "detail": f"{rc} rows vs ceiling {ceiling} ({row_max_pct:.0%} of hist max {hist_max})",
+            })
+
+    passed = all(c["passed"] for c in checks)
+    return {"passed": passed, "checks": checks}
+
+
+def merge_validations(*parts: Dict) -> Dict:
+    """Merge multiple validation result dicts into one."""
+    checks: List[Dict] = []
+    for part in parts:
+        checks.extend(part.get("checks", []))
+    return {"passed": all(c["passed"] for c in checks), "checks": checks}
+
+
+def severity_for_check(check_name: str) -> str:
+    if check_name in ("file_readable",) or check_name.startswith("sheet_exists"):
+        return "critical"
+    if check_name.startswith("trend_rows_low") or check_name == "trend_file_size":
+        return "high"
+    if check_name.startswith("trend_rows_high"):
+        return "medium"
+    if check_name == "observed_file_size_floor":
+        return "high"
+    return "high"
+
+
+def collect_alerts(all_results: List[Dict], run_date: str) -> List[Dict]:
+    """Build a flat list of alert events from scraper results."""
+    alerts: List[Dict] = []
+    for r in all_results:
+        scraper = r["scraper"]
+        if r["files_found"] == 0:
+            alerts.append({
+                "scraper": scraper,
+                "severity": "critical",
+                "type": "no_files",
+                "check": "files_found",
+                "detail": "No Excel files found in R2 for target date",
+                "file": None,
+            })
+            continue
+
+        for fr in r.get("file_results", []):
+            file_key = fr.get("file_key") or fr.get("validation", {}).get("file")
+            for check in fr.get("validation", {}).get("checks", []):
+                if check["passed"]:
+                    continue
+                alerts.append({
+                    "scraper": scraper,
+                    "severity": severity_for_check(check["name"]),
+                    "type": "validation",
+                    "check": check["name"],
+                    "detail": check.get("detail", ""),
+                    "file": file_key,
+                })
+
+            if fr.get("readable") and fr.get("sheets"):
+                for sheet in fr["sheets"]:
+                    q = sheet.get("quality")
+                    if not q:
+                        continue
+                    if q.get("null_id_pct", 0) >= 5:
+                        alerts.append({
+                            "scraper": scraper,
+                            "severity": "high",
+                            "type": "quality",
+                            "check": "null_id_pct",
+                            "detail": f"Sheet '{sheet['name']}': {q['null_id_pct']}% null IDs",
+                            "file": file_key,
+                        })
+                    if q.get("stale_date_pct", 0) >= 20:
+                        alerts.append({
+                            "scraper": scraper,
+                            "severity": "high",
+                            "type": "quality",
+                            "check": "stale_date_pct",
+                            "detail": f"Sheet '{sheet['name']}': {q['stale_date_pct']}% stale dates",
+                            "file": file_key,
+                        })
+    return alerts
+
+
+def should_send_alerts(alerts: List[Dict], alert_cfg: Dict, total_scrapers: int) -> bool:
+    if not alert_cfg.get("enabled", True):
+        return False
+    if not alerts:
+        return False
+    if alert_cfg.get("alert_on_any_failure", True):
+        max_rate = alert_cfg.get("max_scraper_fail_rate_pct", 0)
+        if max_rate <= 0:
+            return True
+        failed_scrapers = len({a["scraper"] for a in alerts})
+        rate = (failed_scrapers / total_scrapers * 100) if total_scrapers else 100
+        return rate >= max_rate
+    return False
+
+
+def format_alert_text(run_date: str, alerts: List[Dict], passed: int, total: int) -> str:
+    lines = [
+        f"4Sale Schema Monitor ALERT — {run_date}",
+        f"{passed}/{total} scrapers passed · {len(alerts)} issue(s)",
+        "",
+    ]
+    by_scraper: Dict[str, List[Dict]] = defaultdict(list)
+    for a in alerts:
+        by_scraper[a["scraper"]].append(a)
+    for scraper, items in sorted(by_scraper.items()):
+        lines.append(f"[{scraper}]")
+        for a in items[:8]:
+            file_bit = f" — {a['file'].split('/')[-1]}" if a.get("file") else ""
+            lines.append(f"  • {a['severity'].upper()} {a['check']}: {a['detail']}{file_bit}")
+        if len(items) > 8:
+            lines.append(f"  … +{len(items) - 8} more")
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+def format_alert_html(run_date: str, alerts: List[Dict], passed: int, total: int) -> str:
+    """HTML body for n8n email node."""
+    rows = []
+    for a in alerts[:50]:
+        file_cell = a.get("file", "") or "—"
+        if file_cell != "—":
+            file_cell = file_cell.split("/")[-1]
+        rows.append(
+            f"<tr>"
+            f"<td>{a['scraper']}</td>"
+            f"<td>{a['severity']}</td>"
+            f"<td>{a['check']}</td>"
+            f"<td>{a.get('detail', '')}</td>"
+            f"<td>{file_cell}</td>"
+            f"</tr>"
+        )
+    extra = ""
+    if len(alerts) > 50:
+        extra = f"<p><em>… and {len(alerts) - 50} more issues</em></p>"
+
+    failed = sorted({a["scraper"] for a in alerts})
+    return (
+        f"<h2>4Sale Schema Monitor ALERT — {run_date}</h2>"
+        f"<p><strong>{passed}/{total}</strong> scrapers passed · "
+        f"<strong>{len(alerts)}</strong> issue(s)</p>"
+        f"<p>Failed scrapers: {', '.join(failed)}</p>"
+        f"<table border='1' cellpadding='6' cellspacing='0' "
+        f"style='border-collapse:collapse;font-family:sans-serif;font-size:13px'>"
+        f"<tr style='background:#f0f0f0'>"
+        f"<th>Scraper</th><th>Severity</th><th>Check</th><th>Detail</th><th>File</th>"
+        f"</tr>"
+        + "".join(rows)
+        + f"</table>{extra}"
+    )
+
+
+def send_webhook_alert(payload: Dict, url: str) -> None:
+    """POST JSON alert payload to webhook URL (n8n / Slack / Discord / Telegram)."""
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json; charset=utf-8"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            log.info(f"Alert webhook sent — HTTP {resp.status}")
+    except urllib.error.HTTPError as exc:
+        log.error(f"Alert webhook HTTP error {exc.code}: {exc.read().decode()[:500]}")
+        raise
+    except Exception as exc:
+        log.error(f"Alert webhook failed: {exc}")
+        raise
+
+
+def dispatch_alerts(
+    alerts: List[Dict],
+    all_results: List[Dict],
+    run_date: str,
+    alert_cfg: Dict,
+    webhook_url: Optional[str],
+    site: Dict,
+    meta: Dict,
+) -> None:
+    if not webhook_url:
+        log.info("MONITOR_ALERT_WEBHOOK_URL not set — alerts logged only.")
+        return
+
+    channels = alert_cfg.get("channels", {}).get("webhook", {})
+    if not channels.get("enabled", True):
+        log.info("Webhook alerts disabled in alert_thresholds.channels.webhook.")
+        return
+
+    total = len(all_results)
+    passed = sum(1 for r in all_results if r["all_passed"])
+    if not should_send_alerts(alerts, alert_cfg, total):
+        log.info("Alert threshold not met — webhook skipped.")
+        return
+
+    display = site.get("display_name") or meta.get("website") or site.get("site_id", "Monitor")
+    website = meta.get("website") or site.get("website", "")
+
+    payload = {
+        "source": f"{site.get('site_id', 'site')}-schema-monitor",
+        "site_id": site.get("site_id"),
+        "website": website,
+        "country": meta.get("country") or site.get("country"),
+        "repo": meta.get("repo") or site.get("repo"),
+        "display_name": display,
+        "status": "failed",
+        "run_date": run_date,
+        "summary": f"{passed}/{total} scrapers passed",
+        "alert_count": len(alerts),
+        "text": format_alert_text(run_date, alerts, passed, total),
+        "email_subject": f"[{display}] ALERT {run_date} — {passed}/{total} passed, {len(alerts)} issue(s)",
+        "email_html": format_alert_html(run_date, alerts, passed, total),
+        "alerts": alerts,
+        "scrapers_failed": sorted({a["scraper"] for a in alerts}),
+    }
+    send_webhook_alert(payload, webhook_url)
+
+
+def upload_stats_file(client, bucket: str, local_path: Path, stats_key: str) -> None:
+    """Bootstrap monitor_stats.yml in R2 from a local file."""
+    body = local_path.read_bytes()
+    client.put_object(
+        Bucket=bucket,
+        Key=stats_key,
+        Body=body,
+        ContentType="text/yaml",
+    )
+    log.info(f"Stats uploaded → r2://{bucket}/{stats_key}")
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # STATS ACCUMULATION & YAML WRITER
 # ══════════════════════════════════════════════════════════════════════════════
@@ -424,23 +754,23 @@ def accumulate_stats(
         se["columns"].extend(new_cols)
 
 
-def load_existing_stats(client, bucket: str) -> Dict:
+def load_existing_stats(client, bucket: str, stats_key: str) -> Dict:
     """Download monitor_stats.yml from R2 and parse it. Returns {} if not found."""
     try:
-        resp = client.get_object(Bucket=bucket, Key=STATS_R2_KEY)
+        resp = client.get_object(Bucket=bucket, Key=stats_key)
         raw  = resp["Body"].read().decode("utf-8")
         data = yaml.safe_load(raw) or {}
-        log.info(f"Loaded existing stats from r2://{bucket}/{STATS_R2_KEY}")
+        log.info(f"Loaded existing stats from r2://{bucket}/{stats_key}")
         return data
     except client.exceptions.NoSuchKey:
-        log.info("No existing monitor_stats.yml in R2 — starting fresh.")
+        log.info(f"No existing monitor_stats.yml at r2://{bucket}/{stats_key}")
         return {}
     except Exception as exc:
         log.warning(f"Could not load stats from R2: {exc} — starting fresh.")
         return {}
 
 
-def save_stats(client, bucket: str, stats: Dict) -> None:
+def save_stats(client, bucket: str, stats: Dict, stats_key: str) -> None:
     """Serialise stats to YAML and upload to R2 (overwrites previous version)."""
     header = (
         "# Auto-generated by monitor/inspect_r2_schema.py\n"
@@ -453,11 +783,11 @@ def save_stats(client, bucket: str, stats: Dict) -> None:
     try:
         client.put_object(
             Bucket=bucket,
-            Key=STATS_R2_KEY,
+            Key=stats_key,
             Body=body,
             ContentType="text/yaml",
         )
-        log.info(f"Saved observed stats → r2://{bucket}/{STATS_R2_KEY}")
+        log.info(f"Saved observed stats → r2://{bucket}/{stats_key}")
     except Exception as exc:
         log.error(f"Failed to save stats to R2: {exc}")
 
@@ -525,9 +855,32 @@ def write_github_summary(results: List[Dict], run_date: str) -> None:
         fh.write("\n".join(lines))
 
 
-def upload_report(client, bucket: str, report: Dict, run_date: str) -> None:
+def write_github_alert_summary(alerts: List[Dict], run_date: str) -> None:
+    """Append alert block to GitHub step summary when failures exist."""
+    if not alerts:
+        return
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not summary_path:
+        return
+    lines = [
+        f"\n### Alerts fired — {len(alerts)} issue(s)\n",
+        "| Scraper | Severity | Check | Detail |",
+        "|---------|----------|-------|--------|",
+    ]
+    for a in alerts[:40]:
+        detail = a.get("detail", "").replace("|", "\\|")[:120]
+        lines.append(
+            f"| {a['scraper']} | {a['severity']} | {a['check']} | {detail} |"
+        )
+    if len(alerts) > 40:
+        lines.append(f"\n_… and {len(alerts) - 40} more_")
+    with open(summary_path, "a", encoding="utf-8") as fh:
+        fh.write("\n".join(lines))
+
+
+def upload_report(client, bucket: str, report: Dict, run_date: str, site: Dict) -> None:
     """Upload the JSON report to R2."""
-    key  = f"4sale-data/monitor/{run_date}/report.json"
+    key  = report_r2_key(site, run_date)
     body = json.dumps(report, ensure_ascii=False, indent=2, default=str).encode()
     try:
         client.put_object(Bucket=bucket, Key=key, Body=body, ContentType="application/json")
@@ -547,10 +900,22 @@ def parse_args():
     p.add_argument("--update-stats",  action="store_true", help="Write/update monitor_stats.yml with observed data")
     p.add_argument("--quality",       action="store_true", help="Run deep data-quality checks (slower)")
     p.add_argument("--fail-on-error", action="store_true", help="Exit with code 1 if any check fails")
+    p.add_argument("--no-alert",      action="store_true", help="Skip webhook alerts even if URL is configured")
     p.add_argument(
         "--upload-config",
         action="store_true",
         help="Upload local websites-config.yml to R2 (bootstrap CI), then exit",
+    )
+    p.add_argument(
+        "--upload-stats",
+        metavar="PATH",
+        default=None,
+        help="Upload a local monitor_stats.yml to R2 (bootstrap trend baselines), then exit",
+    )
+    p.add_argument(
+        "--site-slug",
+        default=None,
+        help="Override MONITOR_SITE_SLUG (e.g. 4sale) for this run",
     )
     return p.parse_args()
 
@@ -558,10 +923,21 @@ def parse_args():
 def main():
     args = parse_args()
 
-    if args.upload_config:
-        r2_client, bucket = build_r2_client()
-        upload_config(r2_client, bucket)
-        return
+    r2_client, bucket = build_r2_client()
+
+    if args.upload_config or args.upload_stats:
+        folder = resolve_site_folder(args.site_slug)
+        site = load_site_config_from_r2(r2_client, bucket, folder)
+        keys = monitor_data_keys(site)
+        if args.upload_config:
+            upload_config(r2_client, bucket, keys["config"])
+            return
+        if args.upload_stats:
+            upload_stats_file(r2_client, bucket, Path(args.upload_stats), keys["stats"])
+            return
+
+    site = load_site_config_from_r2(r2_client, bucket, args.site_slug)
+    keys = monitor_data_keys(site)
 
     # Date range to inspect
     if args.date:
@@ -573,22 +949,36 @@ def main():
 
     log.info(f"Inspecting date(s): {[d.strftime('%Y-%m-%d') for d in dates_to_check]}")
 
-    # Connect to R2 (needed for file inspection and for config when not in repo)
-    r2_client, bucket = build_r2_client()
     log.info(f"Connected to R2 bucket: {bucket}")
+    log.info(f"Site folder: {site.get('folder')} · data prefix: {keys['base']}")
 
-    config = load_config(r2_client, bucket)
+    config = load_config(r2_client, bucket, keys["config"])
+    meta   = config.get("meta", {})
+    alert_cfg = config.get("alert_thresholds", {})
+    trend_cfg = alert_cfg.get("trend", {})
 
     # Build schema lookup: scraper_name → schema_entry
     schema_by_scraper = {
         e["scraper"]: e for e in config.get("excel_schema", [])
     }
 
-    # Load existing stats from R2 (for --update-stats mode)
-    stats = load_existing_stats(r2_client, bucket) if args.update_stats else {}
+    # Load historical stats from R2 for trend checks and/or --update-stats
+    hist_stats = load_existing_stats(r2_client, bucket, keys["stats"])
+    stats = dict(hist_stats) if args.update_stats else {}
 
     all_results  = []
-    full_report  = {"run_date": run_date_str, "scrapers": {}}
+    full_report  = {
+        "run_date":  run_date_str,
+        "folder":    site.get("folder"),
+        "site_id":   site.get("site_id"),
+        "website":   meta.get("website") or site.get("website"),
+        "country":   meta.get("country") or site.get("country"),
+        "repo":      meta.get("repo") or site.get("repo"),
+        "display_name": site.get("display_name"),
+        "meta":      meta,
+        "scrapers":  {},
+        "alerts":    [],
+    }
 
     scrapers_cfg = config.get("scrapers", [])
     log.info(f"Processing {len(scrapers_cfg)} scrapers …")
@@ -654,10 +1044,18 @@ def main():
                     if sheet["name"] != "Info":
                         sheet["quality"] = check_data_quality(raw, sheet["name"])
 
-            # Validate against schema
+            # Validate against schema + alert floors + historical trends
             file_validation = {"file": xlsx_meta["key"], "checks": []}
             if schema_entry:
-                file_validation = validate_file(inspected, schema_entry)
+                schema_val = validate_file(inspected, schema_entry)
+                floor_val = validate_observed_floor(inspected, scraper_name, alert_cfg)
+                trend_val = validate_trends(
+                    inspected,
+                    scraper_name,
+                    hist_stats.get(scraper_name),
+                    trend_cfg,
+                )
+                file_validation = merge_validations(schema_val, floor_val, trend_val)
                 file_validation["file"] = xlsx_meta["key"]
             else:
                 log.debug(f"  {scraper_name}: no schema entry — skipping validation")
@@ -692,12 +1090,27 @@ def main():
         )
 
     # ── Outputs ───────────────────────────────────────────────────────────────
+    alerts = collect_alerts(all_results, run_date_str)
+    full_report["alerts"] = alerts
+    full_report["alert_count"] = len(alerts)
+
     print_summary_table(all_results)
     write_github_summary(all_results, run_date_str)
-    upload_report(r2_client, bucket, full_report, run_date_str)
+    write_github_alert_summary(alerts, run_date_str)
+    upload_report(r2_client, bucket, full_report, run_date_str, site)
 
     if args.update_stats:
-        save_stats(r2_client, bucket, stats)
+        save_stats(r2_client, bucket, stats, keys["stats"])
+
+    # ── Webhook alerts ────────────────────────────────────────────────────────
+    if not args.no_alert:
+        webhook_url = os.environ.get("MONITOR_ALERT_WEBHOOK_URL", "").strip() or None
+        try:
+            dispatch_alerts(
+                alerts, all_results, run_date_str, alert_cfg, webhook_url, site, meta
+            )
+        except Exception as exc:
+            log.error(f"Alert dispatch error (non-fatal): {exc}")
 
     # ── Exit code ─────────────────────────────────────────────────────────────
     any_failure = any(not r["all_passed"] for r in all_results)

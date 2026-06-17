@@ -1,0 +1,47 @@
+name: "Monitor Hub — Aggregate All Sites"
+
+on:
+  schedule:
+    - cron: '0 10 * * *'   # Daily 10:00 UTC — after per-site monitors at 08:00
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Date to aggregate (YYYY-MM-DD). Leave blank for yesterday."
+        required: false
+        default: ""
+
+concurrency:
+  group: monitor-hub
+  cancel-in-progress: false
+
+env:
+  PYTHONUTF8: "1"
+
+jobs:
+  aggregate:
+    name: "Merge all website reports"
+    runs-on: ubuntu-22.04
+    env:
+      CF_R2_ACCESS_KEY_ID:     ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+      CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+      CF_R2_ENDPOINT_URL:      ${{ secrets.CF_R2_ENDPOINT_URL }}
+      CF_R2_BUCKET_NAME:       ${{ secrets.CF_R2_BUCKET_NAME }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pyyaml boto3
+
+      - name: Aggregate site reports
+        run: |
+          FLAGS=""
+          DATE="${{ github.event.inputs.date }}"
+          if [ -n "$DATE" ]; then
+            FLAGS="--date $DATE"
+          fi
+          python monitor/aggregate_reports.py $FLAGS

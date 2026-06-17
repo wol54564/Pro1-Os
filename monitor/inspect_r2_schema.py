@@ -143,7 +143,7 @@ def inspect_excel(raw: bytes, file_key: str) -> Dict:
     return result
 
 
-def check_data_quality(raw: bytes, sheet_name: str) -> Dict:
+def check_data_quality(raw: bytes, sheet_name: str, listing_date: Optional[str] = None) -> Dict:
     """
     Run deeper data-quality checks on a single sheet using pandas.
     Returns a dict of quality metrics.
@@ -184,9 +184,9 @@ def check_data_quality(raw: bytes, sheet_name: str) -> Dict:
             None,
         )
         if date_col:
-            yesterday_str = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+            expected = listing_date or (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
             stale = df[date_col].astype(str).apply(
-                lambda v: not str(v).startswith(yesterday_str)
+                lambda v: not str(v).startswith(expected)
             )
             metrics["stale_date_pct"] = round(stale.mean() * 100, 1)
 
@@ -295,7 +295,8 @@ _SCRAPER_PROFILES: Dict[str, Dict] = {
 
 # Normalized column names that are enrichment / metadata — missing is OK
 _OPTIONAL_CANONICAL_COLUMNS = frozenset({
-    "images", "imagespaths", "s3images", "r2images",
+    "images", "imagespaths", "s3images", "r2images", "imagescount",
+    "imageurls",
     "specificationen", "specificationar",
     "slug", "daterelative", "datecreated", "dateexpired",
     "saveddate", "scrapeddate",
@@ -324,6 +325,15 @@ _COLUMN_CANONICAL: Dict[str, str] = {
     "daterelative": "daterelative",
     "userads": "userads",
     "imagescount": "imagescount",
+    "userid": "userid",
+    "user": "user",
+    "district": "district",
+    "imageurls": "imageurls",
+    "datecreated": "datecreated",
+    "dateexpired": "dateexpired",
+    "datesort": "datesort",
+    "datepublished": "datepublished",
+    "pmenabled": "pmenabled",
     "viewsno": "views",
     "specificationen": "specificationen",
     "specificationar": "specificationar",
@@ -1290,7 +1300,9 @@ def main():
             if args.quality and inspected["readable"]:
                 for sheet in inspected["sheets"]:
                     if sheet["name"] != "Info":
-                        sheet["quality"] = check_data_quality(raw, sheet["name"])
+                        sheet["quality"] = check_data_quality(
+                            raw, sheet["name"], listing_date_str
+                        )
 
             # Validate against schema + alert floors + historical trends
             file_validation = {"file": xlsx_meta["key"], "checks": []}

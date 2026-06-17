@@ -291,6 +291,22 @@ _SCRAPER_PROFILES: Dict[str, Dict] = {
         "data_sheet_aliases": {"Sheet1", "Main", "Data", "Listings"},
         "core_columns": ["id", "title"],
     },
+    "Rest-Automotive-Part2": {
+        "core_columns": [
+            "ID", "Title", "Phone", "User", "User ID", "User Email",
+            "Description", "Price", "Date Published", "Date Created",
+            "Date Expired", "Date Sort",
+        ],
+        "optional_columns": [
+            "Images Count", "Image URLs", "District", "Category", "Contacts",
+            "PM Enabled", "Latitude", "Longitude", "Slug", "Status",
+        ],
+        "min_file_size_kb": 5,
+    },
+    "Services": {"min_file_size_kb": 5},
+    "Automotive-Cars-and-Trucks": {"min_file_size_kb": 5},
+    "Electronics": {"min_file_size_kb": 5},
+    "Furniture": {"min_file_size_kb": 5},
 }
 
 # Normalized column names that are enrichment / metadata — missing is OK
@@ -401,6 +417,7 @@ def validate_file(
     """
     checks = []
     profile = _SCRAPER_PROFILES.get(scraper_name, {})
+    profile_optional = set(profile.get("optional_columns", []))
 
     def add(name, passed, detail=""):
         checks.append({"name": name, "passed": passed, "detail": detail})
@@ -422,7 +439,7 @@ def validate_file(
             add(f"rows_in_{sheet_label[:20]}", True, "0 rows — column check skipped")
             return
 
-        schema_optional = schema_sheet.get("optional_columns", [])
+        schema_optional = list(schema_sheet.get("optional_columns", [])) + list(profile_optional)
         missing_core, missing_optional = resolve_required_columns(
             req_cols, obs["columns"], schema_optional
         )
@@ -465,11 +482,15 @@ def validate_file(
                 add("data_sheets_exist", False, "No data sheets found")
                 continue
             core_cols = profile.get("core_columns") or req_cols
+            profile_opt = list(profile.get("optional_columns", []))
             for ds in data_sheets:
                 if ds["row_count"] == 0:
                     add(f"rows_in_{ds['name'][:20]}", True, "0 rows — skipped")
                     continue
-                validate_sheet_columns(ds["name"], ds, core_cols, schema_sheet)
+                validate_sheet_columns(
+                    ds["name"], ds, core_cols,
+                    {**schema_sheet, "optional_columns": profile_opt},
+                )
                 in_range = row_min <= ds["row_count"] <= row_max
                 add(
                     f"rows_in_{ds['name'][:20]}",
@@ -497,7 +518,7 @@ def validate_file(
             )
 
     # --- File size ---
-    min_kb  = schema_entry.get("min_file_size_kb", 0)
+    min_kb  = profile.get("min_file_size_kb", schema_entry.get("min_file_size_kb", 0))
     size_kb = inspected.get("size_bytes", 0) / 1024
     add(
         "file_size_ok",

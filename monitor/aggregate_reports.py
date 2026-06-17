@@ -26,9 +26,9 @@ import sys
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
-from inspect_r2_schema import build_r2_client
 from monitor_r2 import (
     MONITOR_SITES_ROOT,
+    build_r2_client,
     hub_merged_r2_key,
     load_registry_from_r2,
     put_bytes,

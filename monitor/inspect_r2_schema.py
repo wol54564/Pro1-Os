@@ -54,6 +54,7 @@ import pandas as pd
 import yaml
 
 from monitor_r2 import (
+    build_r2_client,
     load_site_config_from_r2,
     monitor_data_keys,
     report_r2_key,
@@ -71,31 +72,6 @@ log = logging.getLogger("monitor")
 # ── Paths ─────────────────────────────────────────────────────────────────────
 REPO_ROOT   = Path(__file__).resolve().parent.parent
 CONFIG_FILE = REPO_ROOT / "websites-config.yml"
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# R2 CLIENT
-# ══════════════════════════════════════════════════════════════════════════════
-
-def build_r2_client():
-    """Return a boto3 S3 client pointed at Cloudflare R2."""
-    access_key  = os.environ["CF_R2_ACCESS_KEY_ID"]
-    secret_key  = os.environ["CF_R2_SECRET_ACCESS_KEY"]
-    endpoint    = os.environ["CF_R2_ENDPOINT_URL"].rstrip("/")
-    bucket_name = os.environ["CF_R2_BUCKET_NAME"]
-
-    # Strip trailing bucket name from endpoint if present
-    if endpoint.endswith("/" + bucket_name):
-        endpoint = endpoint[: -len("/" + bucket_name)]
-
-    client = boto3.client(
-        "s3",
-        endpoint_url=endpoint,
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
-        region_name="auto",
-    )
-    return client, bucket_name
 
 
 def list_excel_files(client, bucket: str, prefix: str) -> List[Dict]:

@@ -16,13 +16,34 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
+import boto3
 import yaml
 
 log = logging.getLogger("monitor")
 
 MONITOR_SITES_ROOT = os.environ.get("MONITOR_SITES_PREFIX", "monitor-sites").strip("/")
+
+
+def build_r2_client() -> Tuple:
+    """Return a boto3 S3 client pointed at Cloudflare R2."""
+    access_key  = os.environ["CF_R2_ACCESS_KEY_ID"]
+    secret_key  = os.environ["CF_R2_SECRET_ACCESS_KEY"]
+    endpoint    = os.environ["CF_R2_ENDPOINT_URL"].rstrip("/")
+    bucket_name = os.environ["CF_R2_BUCKET_NAME"]
+
+    if endpoint.endswith("/" + bucket_name):
+        endpoint = endpoint[: -len("/" + bucket_name)]
+
+    client = boto3.client(
+        "s3",
+        endpoint_url=endpoint,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        region_name="auto",
+    )
+    return client, bucket_name
 
 
 def registry_r2_key(root: str = MONITOR_SITES_ROOT) -> str:

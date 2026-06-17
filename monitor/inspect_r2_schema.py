@@ -295,8 +295,8 @@ _SCRAPER_PROFILES: Dict[str, Dict] = {
 
 # Normalized column names that are enrichment / metadata — missing is OK
 _OPTIONAL_CANONICAL_COLUMNS = frozenset({
-    "images", "imagespaths", "s3images", "r2images", "imagescount",
-    "imageurls",
+    "images", "imagespaths", "s3images", "r2images", "r2imagespaths", "imagescount",
+    "imageurls", "pin",
     "specificationen", "specificationar",
     "slug", "daterelative", "datecreated", "dateexpired",
     "saveddate", "scrapeddate",
@@ -316,6 +316,7 @@ _COLUMN_CANONICAL: Dict[str, str] = {
     "r2images": "images",
     "s3imagespaths": "imagespaths",
     "r2imagespaths": "imagespaths",
+    "pin": "pin",
     "displaytitle": "name",
     "displaydescription": "about",
     "username": "username",

@@ -41,6 +41,7 @@ import io
 import json
 import logging
 import os
+import re
 import sys
 import tempfile
 import urllib.error
@@ -280,12 +281,105 @@ def excel_prefixes_for_date(base: str, dt: datetime) -> List[str]:
 # Sentinel patterns used as sheet-name templates in the YAML
 _TEMPLATE_MARKERS = ("{", "or Main", "or All Listings")
 
+# Scrapers that may legitimately produce zero files on many days (e.g. no yesterday listings)
+_FILES_OPTIONAL_SCRAPERS = frozenset({"New Car"})
+
+# Per-scraper validation overrides when R2 schema does not match actual Excel layout
+_SCRAPER_PROFILES: Dict[str, Dict] = {
+    "Commercials": {
+        "skip_info_sheet": True,
+        "data_sheet_aliases": {"Sheet1", "Main", "Data", "Listings"},
+        "core_columns": ["id", "title"],
+    },
+}
+
+# Normalized column names that are enrichment / metadata — missing is OK
+_OPTIONAL_CANONICAL_COLUMNS = frozenset({
+    "images", "imagespaths", "s3images", "r2images",
+    "specificationen", "specificationar",
+    "slug", "daterelative", "datecreated", "dateexpired",
+    "saveddate", "scrapeddate",
+    "categoryarabic", "categoryenglish", "hassubcategories", "subcategoriescount",
+    "userphone", "useremail", "fulladdressen", "fulladdress",
+    "membership", "isverified", "description",
+    "views", "latitude", "longitude",
+})
+
+# Map normalized header variants → canonical name for fuzzy matching
+_COLUMN_CANONICAL: Dict[str, str] = {
+    "listingid": "id",
+    "savedtos3date": "saveddate",
+    "savedtor2date": "saveddate",
+    "datascrapeddate": "scrapeddate",
+    "s3images": "images",
+    "r2images": "images",
+    "s3imagespaths": "imagespaths",
+    "r2imagespaths": "imagespaths",
+    "displaytitle": "name",
+    "displaydescription": "about",
+    "username": "username",
+    "usertype": "usertype",
+    "datepublished": "datepublished",
+    "daterelative": "daterelative",
+    "imagescount": "imagescount",
+    "viewsno": "views",
+    "specificationen": "specificationen",
+    "specificationar": "specificationar",
+    "fulladdressen": "fulladdress",
+    "descriptionen": "description",
+    "descriptionar": "description",
+    "phonenumber": "phone",
+    "whatsappphone": "phone",
+}
+
+
+def normalize_column_name(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(name).lower())
+
+
+def canonical_column(name: str) -> str:
+    norm = normalize_column_name(name)
+    return _COLUMN_CANONICAL.get(norm, norm)
+
+
+def build_observed_column_index(columns: List[str]) -> set:
+    return {canonical_column(c) for c in columns}
+
+
+def resolve_required_columns(
+    required: List[str],
+    observed_columns: List[str],
+    schema_optional: Optional[List[str]] = None,
+) -> Tuple[List[str], List[str]]:
+    """
+    Return (missing_core, missing_optional) after fuzzy + alias matching.
+    """
+    observed = build_observed_column_index(observed_columns)
+    schema_opt = {canonical_column(c) for c in (schema_optional or [])}
+    missing_core: List[str] = []
+    missing_optional: List[str] = []
+
+    for col in required:
+        canon = canonical_column(col)
+        if canon in observed:
+            continue
+        if canon in _OPTIONAL_CANONICAL_COLUMNS or canon in schema_opt:
+            missing_optional.append(col)
+        else:
+            missing_core.append(col)
+
+    return missing_core, missing_optional
+
 
 def is_template(name: str) -> bool:
     return any(m in name for m in _TEMPLATE_MARKERS)
 
 
-def validate_file(inspected: Dict, schema_entry: Dict) -> Dict:
+def validate_file(
+    inspected: Dict,
+    schema_entry: Dict,
+    scraper_name: str = "",
+) -> Dict:
     """
     Compare an inspected file against its schema entry.
     Returns a validation result dict:
@@ -293,6 +387,7 @@ def validate_file(inspected: Dict, schema_entry: Dict) -> Dict:
       checks: [{name, passed, detail}]
     """
     checks = []
+    profile = _SCRAPER_PROFILES.get(scraper_name, {})
 
     def add(name, passed, detail=""):
         checks.append({"name": name, "passed": passed, "detail": detail})
@@ -306,28 +401,62 @@ def validate_file(inspected: Dict, schema_entry: Dict) -> Dict:
     observed_sheets = {s["name"]: s for s in inspected["sheets"]}
     schema_sheets   = schema_entry.get("sheets", [])
 
+    def validate_sheet_columns(sheet_label: str, obs: Dict, req_cols: List[str], schema_sheet: Dict):
+        if obs["row_count"] == 0 and not obs["columns"]:
+            add(f"rows_in_{sheet_label[:20]}", True, "empty sheet — skipped")
+            return
+        if obs["row_count"] == 0:
+            add(f"rows_in_{sheet_label[:20]}", True, "0 rows — column check skipped")
+            return
+
+        schema_optional = schema_sheet.get("optional_columns", [])
+        missing_core, missing_optional = resolve_required_columns(
+            req_cols, obs["columns"], schema_optional
+        )
+        add(
+            f"columns_in_{sheet_label[:20]}",
+            len(missing_core) == 0,
+            (
+                f"Missing core: {missing_core}"
+                + (f"; optional absent: {missing_optional}" if missing_optional else "")
+                + (
+                    f"; actual headers: {obs['columns'][:12]}"
+                    + ("…" if len(obs["columns"]) > 12 else "")
+                    if missing_core else ""
+                )
+            ) if missing_core or missing_optional else "",
+        )
+
     for schema_sheet in schema_sheets:
         sname    = schema_sheet["name"]
         req_cols = schema_sheet.get("required_columns", [])
         row_min, row_max = schema_sheet.get("row_count_range", [0, 999999])
 
-        # Template sheets  (e.g. "{child_category or Main}") — we validate
+        if profile.get("skip_info_sheet") and sname == "Info":
+            continue
+
+        # Template sheets  (e.g. "{child_category or Main}") — validate
         # all non-Info observed sheets against this template
         if is_template(sname):
             data_sheets = [
                 s for s in inspected["sheets"]
-                if s["name"] != "Info" and s["name"] != "No Data"
+                if s["name"] not in ("Info", "No Data")
             ]
+            if profile.get("data_sheet_aliases"):
+                data_sheets = [
+                    s for s in inspected["sheets"]
+                    if s["name"] in profile["data_sheet_aliases"]
+                    or (s["name"] not in ("Info", "No Data") and s["row_count"] > 0)
+                ]
             if not data_sheets:
                 add("data_sheets_exist", False, "No data sheets found")
                 continue
+            core_cols = profile.get("core_columns") or req_cols
             for ds in data_sheets:
-                missing_cols = [c for c in req_cols if c not in ds["columns"]]
-                add(
-                    f"columns_in_{ds['name'][:20]}",
-                    len(missing_cols) == 0,
-                    f"Missing: {missing_cols}" if missing_cols else "",
-                )
+                if ds["row_count"] == 0:
+                    add(f"rows_in_{ds['name'][:20]}", True, "0 rows — skipped")
+                    continue
+                validate_sheet_columns(ds["name"], ds, core_cols, schema_sheet)
                 in_range = row_min <= ds["row_count"] <= row_max
                 add(
                     f"rows_in_{ds['name'][:20]}",
@@ -335,17 +464,18 @@ def validate_file(inspected: Dict, schema_entry: Dict) -> Dict:
                     f"{ds['row_count']} rows (expected {row_min}–{row_max})",
                 )
         else:
-            # Exact sheet name
-            if sname not in observed_sheets:
+            # Exact sheet name — allow profile aliases (e.g. Commercials → Sheet1)
+            obs = observed_sheets.get(sname)
+            if obs is None and profile.get("data_sheet_aliases"):
+                for alias in profile["data_sheet_aliases"]:
+                    if alias in observed_sheets:
+                        obs = observed_sheets[alias]
+                        break
+            if obs is None:
                 add(f"sheet_exists_{sname}", False, f"Sheet '{sname}' not found")
                 continue
-            obs = observed_sheets[sname]
-            missing_cols = [c for c in req_cols if c not in obs["columns"]]
-            add(
-                f"columns_in_{sname[:20]}",
-                len(missing_cols) == 0,
-                f"Missing: {missing_cols}" if missing_cols else "",
-            )
+            core_cols = profile.get("core_columns") if profile.get("core_columns") and sname != "Info" else req_cols
+            validate_sheet_columns(sname, obs, core_cols, schema_sheet)
             in_range = row_min <= obs["row_count"] <= row_max
             add(
                 f"rows_in_{sname[:20]}",
@@ -479,6 +609,8 @@ def collect_alerts(all_results: List[Dict], run_date: str) -> List[Dict]:
     for r in all_results:
         scraper = r["scraper"]
         if r["files_found"] == 0:
+            if r.get("files_optional"):
+                continue
             alerts.append({
                 "scraper": scraper,
                 "severity": "critical",
@@ -895,12 +1027,13 @@ def print_summary_table(results: List[Dict]) -> None:
     print("=" * 70)
     for r in results:
         status  = PASS if r["all_passed"] else FAIL
-        missing = MISS if r["files_found"] == 0 else ""
+        missing = MISS if r["files_found"] == 0 and not r.get("files_optional") else ""
+        optional = " (optional)" if r.get("files_optional") and r["files_found"] == 0 else ""
         print(
             f"{r['scraper']:<30}  "
             f"{r['files_found']:<6}  "
             f"{r['checks_passed']}/{r['checks_total']:<7}  "
-            f"{status} {missing}"
+            f"{status}{optional} {missing}"
         )
     print("=" * 70)
     total_pass = sum(1 for r in results if r["all_passed"])
@@ -921,7 +1054,9 @@ def write_github_summary(results: List[Dict], listing_date: str, report_date: st
         icon   = PASS if r["all_passed"] else (MISS if r["files_found"] == 0 else FAIL)
         detail = ""
         if not r["all_passed"]:
-            if r["files_found"] == 0:
+            if r.get("files_optional") and r["files_found"] == 0:
+                detail = "no files (optional)"
+            elif r["files_found"] == 0:
                 detail = "no Excel files found"
             else:
                 failed_bits = []
@@ -1117,14 +1252,26 @@ def main():
         if not all_xlsx:
             listing_date = dates_to_check[0].strftime("%Y-%m-%d")
             partition_date = partition_date_for_data_date(dates_to_check[0]).strftime("%Y-%m-%d")
+            files_optional = (
+                scraper_cfg.get("files_optional", False)
+                or scraper_name in _FILES_OPTIONAL_SCRAPERS
+            )
             sample = ", ".join(tried_prefixes[:2])
             extra  = f" (+{len(tried_prefixes) - 2} more)" if len(tried_prefixes) > 2 else ""
-            log.warning(
-                f"  {scraper_name}: NO Excel files found under {r2_base} "
-                f"for listing {listing_date} (R2 partition day={partition_date}); "
-                f"tried e.g. {sample}{extra}"
-            )
-            scraper_result["all_passed"] = False
+            if files_optional:
+                log.info(
+                    f"  {scraper_name}: no files for listing {listing_date} "
+                    f"(optional — data is rare; partition day={partition_date})"
+                )
+                scraper_result["all_passed"] = True
+                scraper_result["files_optional"] = True
+            else:
+                log.warning(
+                    f"  {scraper_name}: NO Excel files found under {r2_base} "
+                    f"for listing {listing_date} (R2 partition day={partition_date}); "
+                    f"tried e.g. {sample}{extra}"
+                )
+                scraper_result["all_passed"] = False
             all_results.append(scraper_result)
             full_report["scrapers"][scraper_name] = scraper_result
             continue
@@ -1146,7 +1293,7 @@ def main():
             # Validate against schema + alert floors + historical trends
             file_validation = {"file": xlsx_meta["key"], "checks": []}
             if schema_entry:
-                schema_val = validate_file(inspected, schema_entry)
+                schema_val = validate_file(inspected, schema_entry, scraper_name)
                 floor_val = validate_observed_floor(inspected, scraper_name, alert_cfg)
                 trend_val = validate_trends(
                     inspected,

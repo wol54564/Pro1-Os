@@ -271,8 +271,8 @@ class UsedCarsScraperOrchestrator:
                 
                 logger.info(f"Creating sheet: {sheet_name} with {len(listings)} listings")
                 
-                # Create DataFrame and write to Excel
-                df = pd.DataFrame(listings)
+                formatted = self.format_listings_for_excel(listings)
+                df = pd.DataFrame(formatted)
                 df.to_excel(writer, sheet_name=sheet_name, index=False)
                 sheets_created += 1
                 logger.info(f"  [OK] Created sheet: {sheet_name}")

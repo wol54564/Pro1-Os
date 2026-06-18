@@ -71,3 +71,22 @@ jobs:
             fi
             python monitor/export_hub_tables.py $FLAGS
           fi
+
+      - name: Push flat tables to MotherDuck
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+          MOTHERDUCK_DATABASE: ${{ secrets.MOTHERDUCK_DATABASE }}
+        run: |
+          if [ "${{ github.event.inputs.backfill }}" = "true" ]; then
+            python monitor/push_to_motherduck.py \
+              --backfill \
+              --days "${{ github.event.inputs.backfill_days }}" \
+              --from-r2
+          else
+            FLAGS="--from-r2"
+            DATE="${{ github.event.inputs.date }}"
+            if [ -n "$DATE" ]; then
+              FLAGS="--date $DATE --from-r2"
+            fi
+            python monitor/push_to_motherduck.py $FLAGS
+          fi

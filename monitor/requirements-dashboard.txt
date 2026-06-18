@@ -1,3 +1,4 @@
 # Dashboard pipeline (export_hub_tables.py, push_to_motherduck.py)
 pandas>=2.0.0
 pyarrow>=14.0.0
+duckdb>=1.0.0

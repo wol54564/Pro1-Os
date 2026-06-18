@@ -59,6 +59,37 @@ def hub_merged_r2_key(run_date: str, root: str = MONITOR_SITES_ROOT) -> str:
     return f"{root}/hub/{run_date}/all-sites.json"
 
 
+def hub_tables_base(root: str = MONITOR_SITES_ROOT) -> str:
+    """Prefix for flat Parquet exports (MotherDuck ingest)."""
+    return f"{root.strip('/')}/hub/tables"
+
+
+def hub_table_parquet_key(table: str, partition_date: str, root: str = MONITOR_SITES_ROOT) -> str:
+    """R2 key for one flat table partition, e.g. hub_daily/2026-06-17.parquet."""
+    return f"{hub_tables_base(root)}/{table.strip('/')}/{partition_date}.parquet"
+
+
+def list_hub_partition_dates(
+    client,
+    bucket: str,
+    root: str = MONITOR_SITES_ROOT,
+) -> List[str]:
+    """YYYY-MM-DD partition folders under hub/ that contain all-sites.json."""
+    prefix = f"{root.strip('/')}/hub/"
+    seen: set = set()
+    paginator = client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            if not key.endswith("/all-sites.json"):
+                continue
+            rest = key[len(prefix):]
+            date_part = rest.split("/", 1)[0]
+            if len(date_part) == 10 and date_part[4] == "-" and date_part[7] == "-":
+                seen.add(date_part)
+    return sorted(seen)
+
+
 def monitor_data_keys(site: Dict) -> Dict[str, str]:
     """Paths under the site's data prefix (excel/csv storage area)."""
     base = f"{site.get('r2_prefix', '').strip('/')}/monitor"

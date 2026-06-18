@@ -44,7 +44,9 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install pyyaml boto3 -r monitor/requirements-dashboard.txt
+        run: |
+          pip install pyyaml boto3 -r monitor/requirements-dashboard.txt
+          python -c "import duckdb; print('duckdb', duckdb.__version__)"
 
       - name: Aggregate site reports
         if: ${{ !inputs.backfill }}

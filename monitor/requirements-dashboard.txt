@@ -1,4 +1,5 @@
 # Dashboard pipeline (export_hub_tables.py, push_to_motherduck.py)
 pandas>=2.0.0
 pyarrow>=14.0.0
-duckdb>=1.0.0
+# MotherDuck max client is 1.5.3 — do not use 1.5.4+ until MotherDuck supports it
+duckdb==1.5.3

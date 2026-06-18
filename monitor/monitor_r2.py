@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import boto3
 import yaml
@@ -83,6 +83,73 @@ def partition_date_str_for_listing(listing_date: str) -> str:
     """YYYY-MM-DD partition path for a listing-date string."""
     listing_dt = datetime.strptime(listing_date, "%Y-%m-%d")
     return partition_date_for_listing(listing_dt).strftime("%Y-%m-%d")
+
+
+_NON_DAILY_SCHEDULES = frozenset({
+    "monthly",
+    "quarterly",
+    "every_2_days",
+    "weekly",
+    "biweekly",
+})
+
+_SCHEDULE_LOOKBACK_DAYS = {
+    "monthly": 31,
+    "quarterly": 120,
+    "every_2_days": 3,
+    "weekly": 7,
+    "biweekly": 14,
+}
+
+# When registry.yml omits schedule, infer from monitor-sites folder slug.
+_FOLDER_DEFAULT_SCHEDULE = {
+    "motorgy": "monthly",
+    "kcsb": "quarterly",
+    "sheeel": "every_2_days",
+}
+
+
+def _normalize_schedule(site: Dict) -> str:
+    raw = site.get("schedule")
+    if raw:
+        return str(raw).lower().replace(" ", "_").replace("-", "_")
+    folder = (site.get("folder") or site.get("site_id") or "").lower()
+    return _FOLDER_DEFAULT_SCHEDULE.get(folder, "daily")
+
+
+def site_allows_report_fallback(site: Dict) -> bool:
+    """Non-daily sites (monthly, quarterly, …) may reuse their latest report in the hub."""
+    fb = site.get("report_fallback")
+    if fb is True or fb == "latest":
+        return True
+    if fb is False:
+        return False
+    return _normalize_schedule(site) in _NON_DAILY_SCHEDULES
+
+
+def report_lookback_days(site: Dict) -> int:
+    explicit = site.get("report_lookback_days")
+    if explicit is not None:
+        return int(explicit)
+    return _SCHEDULE_LOOKBACK_DAYS.get(_normalize_schedule(site), 120)
+
+
+def list_report_partition_dates(client, bucket: str, site: Dict) -> List[str]:
+    """YYYY-MM-DD folders under {r2_prefix}/monitor/ that contain report.json."""
+    base = monitor_data_keys(site)["base"]
+    prefix = f"{base}/"
+    seen: set = set()
+    paginator = client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            if not key.endswith("/report.json"):
+                continue
+            rest = key[len(prefix):]
+            date_part = rest.split("/", 1)[0]
+            if len(date_part) == 10 and date_part[4] == "-" and date_part[7] == "-":
+                seen.add(date_part)
+    return sorted(seen)
 
 
 def resolve_site_folder(explicit: Optional[str] = None) -> str:

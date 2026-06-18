@@ -6,8 +6,12 @@ Merges daily monitor reports from all websites into one JSON file.
 Reads site list from R2:
   monitor-sites/registry.yml
 
-Each site's daily report:
+Each site's report:
   {r2_prefix}/monitor/{partition-date}/report.json   (partition = listing date + 1 day)
+
+Non-daily sites (monthly motorgy, quarterly kcsb, every-2-days sheeel) may not
+have a report for today's partition — the hub reuses the latest report on or
+before that date (see registry schedule / report_fallback).
 
 Writes merged hub output to R2:
   monitor-sites/hub/{partition-date}/all-sites.json
@@ -24,16 +28,19 @@ import logging
 import os
 import sys
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from monitor_r2 import (
     MONITOR_SITES_ROOT,
     build_r2_client,
     hub_merged_r2_key,
+    list_report_partition_dates,
     load_registry_from_r2,
     partition_date_for_listing,
     put_bytes,
+    report_lookback_days,
     report_r2_key,
+    site_allows_report_fallback,
 )
 
 logging.basicConfig(
@@ -54,22 +61,79 @@ def _scraper_results(report: Dict) -> List[Dict]:
     return []
 
 
-def fetch_report(client, bucket: str, site: Dict, partition_date: str) -> Optional[Dict]:
+def _load_report_at_key(client, bucket: str, key: str) -> Dict:
+    resp = client.get_object(Bucket=bucket, Key=key)
+    return json.loads(resp["Body"].read().decode("utf-8"))
+
+
+def fetch_report(
+    client,
+    bucket: str,
+    site: Dict,
+    partition_date: str,
+) -> Tuple[Optional[Dict], str, bool]:
+    """
+    Fetch a site's report for the hub partition date.
+
+    Returns (report, report_partition_date, used_fallback).
+    Non-daily sites fall back to the latest report on or before partition_date.
+    """
+    label = site.get("folder", site.get("site_id"))
     key = report_r2_key(site, partition_date)
     try:
-        resp = client.get_object(Bucket=bucket, Key=key)
-        data = json.loads(resp["Body"].read().decode("utf-8"))
-        log.info(f"  ✓ {site.get('folder', site.get('site_id'))}: r2://{bucket}/{key}")
-        return data
+        data = _load_report_at_key(client, bucket, key)
+        log.info(f"  ✓ {label}: r2://{bucket}/{key}")
+        return data, partition_date, False
     except client.exceptions.NoSuchKey:
-        log.warning(f"  ✗ {site.get('folder', site.get('site_id'))}: no report at {key}")
-        return None
+        pass
     except Exception as exc:
-        log.warning(f"  ✗ {site.get('folder', site.get('site_id'))}: {exc}")
-        return None
+        log.warning(f"  ✗ {label}: {exc}")
+        return None, partition_date, False
+
+    if not site_allows_report_fallback(site):
+        log.warning(f"  ✗ {label}: no report at {key}")
+        return None, partition_date, False
+
+    max_dt = datetime.strptime(partition_date, "%Y-%m-%d")
+    min_dt = max_dt - timedelta(days=report_lookback_days(site))
+    try:
+        all_dates = list_report_partition_dates(client, bucket, site)
+    except Exception as exc:
+        log.warning(f"  ✗ {label}: no report at {key} · could not list earlier reports ({exc})")
+        return None, partition_date, False
+
+    candidates = [
+        d for d in all_dates
+        if min_dt <= datetime.strptime(d, "%Y-%m-%d") <= max_dt
+    ]
+    if not candidates:
+        log.warning(
+            f"  ✗ {label}: no report at {key} "
+            f"and none in lookback {min_dt.strftime('%Y-%m-%d')} … {partition_date}"
+        )
+        return None, partition_date, False
+
+    fallback_date = candidates[-1]
+    fallback_key = report_r2_key(site, fallback_date)
+    try:
+        data = _load_report_at_key(client, bucket, fallback_key)
+        log.info(
+            f"  ↩ {label}: r2://{bucket}/{fallback_key} "
+            f"(latest within lookback; hub partition {partition_date})"
+        )
+        return data, fallback_date, True
+    except Exception as exc:
+        log.warning(f"  ✗ {label}: failed to load fallback report at {fallback_key}: {exc}")
+        return None, partition_date, False
 
 
-def summarize_site(report: Optional[Dict], site: Dict, partition_date: str) -> Dict:
+def summarize_site(
+    report: Optional[Dict],
+    site: Dict,
+    partition_date: str,
+    report_partition_date: str,
+    report_fallback: bool,
+) -> Dict:
     base = {
         "folder":       site.get("folder"),
         "site_id":      site.get("site_id"),
@@ -77,8 +141,11 @@ def summarize_site(report: Optional[Dict], site: Dict, partition_date: str) -> D
         "website":      site.get("website"),
         "country":      site.get("country"),
         "repo":         site.get("repo"),
-        "run_date":     partition_date,
+        "run_date":     report_partition_date,
+        "hub_partition_date": partition_date,
     }
+    if report_fallback:
+        base["report_fallback"] = True
     if not report:
         return {
             **base,
@@ -99,7 +166,7 @@ def summarize_site(report: Optional[Dict], site: Dict, partition_date: str) -> D
         "website":         report.get("website") or site.get("website"),
         "country":         report.get("country") or site.get("country"),
         "repo":            report.get("repo") or site.get("repo"),
-        "run_date":        report.get("run_date", partition_date),
+        "run_date":        report.get("run_date", report_partition_date),
         "inspect_date":    report.get("inspect_date"),
         "status":          "ok" if passed == total and total > 0 else "failed",
         "scrapers_total":  total,
@@ -155,8 +222,12 @@ def main():
 
     site_summaries = []
     for site in sites:
-        report = fetch_report(client, bucket, site, partition_date)
-        site_summaries.append(summarize_site(report, site, partition_date))
+        report, report_partition_date, used_fallback = fetch_report(
+            client, bucket, site, partition_date
+        )
+        site_summaries.append(
+            summarize_site(report, site, partition_date, report_partition_date, used_fallback)
+        )
 
     sites_ok      = sum(1 for s in site_summaries if s["status"] == "ok")
     sites_missing = sum(1 for s in site_summaries if s["status"] == "missing")

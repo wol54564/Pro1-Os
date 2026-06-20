@@ -30,3 +30,7 @@ CF_Data/README.md
 monitor/n8n-email-alert-workflow.json
 output_logs.txt
 monitor/DASHBOARD_IMPLEMENTATION.md
+dashboard/.env
+dashboard/node_modules/
+dashboard/sources/**/connection.options.yaml
+dashboard/*

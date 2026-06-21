@@ -34,3 +34,4 @@ dashboard/.env
 dashboard/node_modules/
 dashboard/sources/**/connection.options.yaml
 dashboard/*
+monitor/registry.example.yml

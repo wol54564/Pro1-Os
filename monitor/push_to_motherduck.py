@@ -89,6 +89,12 @@ SCHEMA_STATEMENTS = [
       country              VARCHAR,
       repo                 VARCHAR,
       github_username      VARCHAR,
+      run_place            VARCHAR,
+      workflow_name        VARCHAR,
+      workflow_run_number  INTEGER,
+      workflow_run_id      VARCHAR,
+      workflow_status      VARCHAR,
+      workflow_duration_sec INTEGER,
       schedule             VARCHAR,
       status               VARCHAR,
       scrapers_total       INTEGER,
@@ -129,6 +135,15 @@ SCHEMA_STATEMENTS = [
     """,
 ]
 
+MIGRATION_STATEMENTS = [
+    "ALTER TABLE site_daily ADD COLUMN IF NOT EXISTS run_place VARCHAR",
+    "ALTER TABLE site_daily ADD COLUMN IF NOT EXISTS workflow_name VARCHAR",
+    "ALTER TABLE site_daily ADD COLUMN IF NOT EXISTS workflow_run_number INTEGER",
+    "ALTER TABLE site_daily ADD COLUMN IF NOT EXISTS workflow_run_id VARCHAR",
+    "ALTER TABLE site_daily ADD COLUMN IF NOT EXISTS workflow_status VARCHAR",
+    "ALTER TABLE site_daily ADD COLUMN IF NOT EXISTS workflow_duration_sec INTEGER",
+]
+
 
 def connect_motherduck() -> duckdb.DuckDBPyConnection:
     token = os.environ.get("MOTHERDUCK_TOKEN", "").strip()
@@ -143,6 +158,8 @@ def connect_motherduck() -> duckdb.DuckDBPyConnection:
 
 def ensure_schema(con: duckdb.DuckDBPyConnection) -> None:
     for stmt in SCHEMA_STATEMENTS:
+        con.execute(stmt)
+    for stmt in MIGRATION_STATEMENTS:
         con.execute(stmt)
     log.info("MotherDuck schema ready (hub_daily, site_daily, scraper_daily, alerts)")
 

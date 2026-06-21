@@ -75,6 +75,12 @@ SITE_DAILY_COLS = [
     "country",
     "repo",
     "github_username",
+    "run_place",
+    "workflow_name",
+    "workflow_run_number",
+    "workflow_run_id",
+    "workflow_status",
+    "workflow_duration_sec",
     "schedule",
     "status",
     "scrapers_total",
@@ -172,6 +178,15 @@ def flatten_hub(
         if not schedule and site.get("folder"):
             schedule = _normalize_schedule({"folder": site.get("folder")})
 
+        report = site.get("report") or {}
+        github_run = report.get("github_run") or {}
+        run_place = (
+            reg.get("run_place")
+            or report.get("run_place")
+            or github_run.get("run_place")
+            or "github"
+        )
+
         site_rows.append({
             "hub_partition_date": hub_partition,
             "site_id": site_id,
@@ -179,8 +194,14 @@ def flatten_hub(
             "display_name": site.get("display_name"),
             "website": site.get("website"),
             "country": site.get("country"),
-            "repo": site.get("repo"),
+            "repo": site.get("repo") or reg.get("repo"),
             "github_username": reg.get("github_username"),
+            "run_place": run_place,
+            "workflow_name": github_run.get("workflow_name"),
+            "workflow_run_number": github_run.get("workflow_run_number"),
+            "workflow_run_id": github_run.get("workflow_run_id"),
+            "workflow_status": github_run.get("workflow_status"),
+            "workflow_duration_sec": github_run.get("duration_sec"),
             "schedule": schedule,
             "status": site.get("status"),
             "scrapers_total": site.get("scrapers_total"),
@@ -190,8 +211,6 @@ def flatten_hub(
             "inspect_date": site.get("inspect_date"),
             "report_fallback": bool(site.get("report_fallback", False)),
         })
-
-        report = site.get("report") or {}
         for scraper_name, sr in _scraper_entries(report):
             scraper_rows.append({
                 "hub_partition_date": hub_partition,

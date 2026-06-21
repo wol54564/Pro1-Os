@@ -1074,6 +1074,36 @@ def print_summary_table(results: List[Dict]) -> None:
     print(f"\nTotal: {total_pass}/{len(results)} scrapers fully passed\n")
 
 
+def build_github_run_meta(site: Dict, started_at: datetime, validation_passed: bool) -> Dict:
+    """Capture where the monitor ran and GitHub Actions run metadata for the dashboard."""
+    run_place = (site.get("run_place") or "github").strip().lower()
+    finished_at = datetime.utcnow()
+    duration_sec = max(0, int((finished_at - started_at).total_seconds()))
+
+    meta: Dict[str, Any] = {
+        "run_place": run_place,
+        "workflow_status": "success" if validation_passed else "failure",
+        "duration_sec": duration_sec,
+        "started_at": started_at.isoformat() + "Z",
+        "finished_at": finished_at.isoformat() + "Z",
+    }
+
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        meta.update({
+            "run_place": "github",
+            "workflow_name": os.environ.get("GITHUB_WORKFLOW", ""),
+            "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
+            "workflow_run_number": int(os.environ.get("GITHUB_RUN_NUMBER") or 0),
+            "github_repository": os.environ.get("GITHUB_REPOSITORY", ""),
+            "github_actor": os.environ.get("GITHUB_ACTOR", ""),
+            "runner_os": os.environ.get("RUNNER_OS", ""),
+        })
+    elif run_place not in ("github", ""):
+        meta["workflow_name"] = site.get("workflow_name") or "monitor"
+
+    return meta
+
+
 def write_github_summary(results: List[Dict], listing_date: str, report_date: str) -> None:
     """Write markdown to $GITHUB_STEP_SUMMARY if available."""
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
@@ -1199,6 +1229,7 @@ def main():
 
     site = load_site_config_from_r2(r2_client, bucket, args.site_slug)
     keys = monitor_data_keys(site)
+    run_started_at = datetime.utcnow()
 
     # Date range to inspect
     if args.date:
@@ -1381,6 +1412,9 @@ def main():
     alerts = collect_alerts(all_results, listing_date_str)
     full_report["alerts"] = alerts
     full_report["alert_count"] = len(alerts)
+    validation_passed = all(r["all_passed"] for r in all_results) and bool(all_results)
+    full_report["github_run"] = build_github_run_meta(site, run_started_at, validation_passed)
+    full_report["run_place"] = full_report["github_run"].get("run_place")
 
     print_summary_table(all_results)
     print_failure_summary(all_results)

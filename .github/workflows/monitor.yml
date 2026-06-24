@@ -2,11 +2,11 @@ name: "Schema Monitor"
 
 # ── Triggers ────────────────────────────────────────────────────────────────
 on:
-  # Daily check at 08:00 UTC Mon–Sat (all batches finish by ~06:00 UTC)
-  # Weekly stats refresh at 09:00 UTC on Sunday
-  schedule:
-    - cron: '0 8 * * 1-6'   # Mon–Sat  →  daily-check job
-    - cron: '0 9 * * 0'     # Sunday   →  weekly-stats job
+  workflow_run:
+    workflows:
+      - "Batch C-2"
+    types:
+      - completed
 
   # Manual trigger — lets you pick a custom date and mode
   workflow_dispatch:
@@ -31,6 +31,10 @@ on:
         description: "Fail the workflow if any scraper check fails?"
         type: boolean
         default: false
+      weekly_refresh:
+        description: "Run weekly stats refresh (last 7 days) instead of daily check?"
+        type: boolean
+        default: false
 
 # ── One run at a time ────────────────────────────────────────────────────────
 concurrency:
@@ -47,10 +51,12 @@ jobs:
   daily-check:
     name: "Daily schema validation"
     runs-on: ubuntu-22.04
-    # Runs on Mon–Sat schedule, manual dispatch, or when triggered by Batch C-2
+    # Runs after Batch C-2 completes or on manual dispatch (not weekly refresh)
     if: >
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'schedule' && github.event.schedule == '0 8 * * 1-6')
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion != 'cancelled') ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.event.inputs.weekly_refresh != 'true')
 
     env:
       CF_R2_ACCESS_KEY_ID:       ${{ secrets.CF_R2_ACCESS_KEY_ID }}
@@ -120,10 +126,10 @@ jobs:
   weekly-stats:
     name: "Weekly stats refresh (last 7 days)"
     runs-on: ubuntu-22.04
-    # Runs on Sunday schedule (cron '0 9 * * 0')
-    # NOTE: also triggered by workflow_dispatch — guard with an input if needed
+    # Manual weekly refresh only (replaces former Sunday schedule)
     if: >
-      github.event_name == 'schedule' && github.event.schedule == '0 9 * * 0'
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.weekly_refresh == 'true'
 
     env:
       CF_R2_ACCESS_KEY_ID:       ${{ secrets.CF_R2_ACCESS_KEY_ID }}

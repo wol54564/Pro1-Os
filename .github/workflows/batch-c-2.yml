@@ -4,9 +4,6 @@ name: "Batch C-2"
 on:
   workflow_dispatch:
 
-permissions:
-  actions: write
-
 concurrency:
   group: batch-pipeline
   cancel-in-progress: false
@@ -96,12 +93,6 @@ jobs:
       - name: "[6/6] Rest-Automotive-Part3"
         continue-on-error: true
         run: cd CFl_data/Rest-Automotive-Part3 && python main.py
-
-      - name: Trigger Schema Monitor
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run "monitor.yml" --repo "${{ github.repository }}"
 
       - name: Batch C-2 summary
         if: always()

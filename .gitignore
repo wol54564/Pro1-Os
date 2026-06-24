@@ -36,3 +36,4 @@ dashboard/sources/**/connection.options.yaml
 monitor/registry.example.yml
 dashboard/README.md
 dashboard/*
+monitor/ADS_COUNTING_PROMPT.md

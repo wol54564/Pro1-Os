@@ -350,6 +350,8 @@ class UsedCarsScraperOrchestrator:
                 logger.info(f"Limiting to {max_categories} categories")
             
             # Process each main category
+            upload_results = []
+            total_listings = 0
             for idx, category in enumerate(main_categories, 1):
                 try:
                     logger.info(f"\n[{idx}/{len(main_categories)}] Processing: {category['name_en']}")
@@ -360,6 +362,9 @@ class UsedCarsScraperOrchestrator:
                     if not category_data:
                         logger.warning(f"No data collected for {category['name_en']}")
                         continue
+                    
+                    category_listings = sum(len(listings) for listings in category_data.values())
+                    total_listings += category_listings
                     
                     # Create Excel file
                     excel_filename = f"{category['name_en']}.xlsx"
@@ -378,6 +383,12 @@ class UsedCarsScraperOrchestrator:
                         
                         if s3_path:
                             logger.info(f"✓ Uploaded to S3: {s3_path}")
+                            upload_results.append({
+                                "name_en": category["name_en"],
+                                "slug": category.get("slug"),
+                                "listings_count": category_listings,
+                                "subcategories_count": len(category_data),
+                            })
                         else:
                             logger.error(f"✗ Failed to upload {excel_filename} to S3")
                     
@@ -386,6 +397,28 @@ class UsedCarsScraperOrchestrator:
                 except Exception as e:
                     logger.error(f"Error processing category {category['name_en']}: {e}", exc_info=True)
                     continue
+
+            if self.s3_helper and total_listings > 0:
+                logger.info("\nUploading JSON summary...")
+                json_summary = {
+                    "scraped_at": datetime.now().isoformat(),
+                    "data_scraped_date": self.scrape_date.strftime('%Y-%m-%d'),
+                    "saved_to_s3_date": self.save_date.strftime('%Y-%m-%d'),
+                    "total_categories": len(upload_results),
+                    "total_listings": total_listings,
+                    "categories": upload_results,
+                }
+                temp_json = self.temp_dir / f"summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                with open(temp_json, 'w', encoding='utf-8') as f:
+                    json.dump(json_summary, f, ensure_ascii=False, indent=2)
+                s3_json_path = self.s3_helper.upload_file(
+                    str(temp_json),
+                    f"json-files/summary_{self.save_date.strftime('%Y%m%d')}.json",
+                    self.save_date
+                )
+                if s3_json_path:
+                    logger.info("✓ Uploaded JSON summary")
+                temp_json.unlink(missing_ok=True)
             
             logger.info("\n" + "="*60)
             logger.info("Scraping completed successfully!")

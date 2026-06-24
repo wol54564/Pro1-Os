@@ -342,6 +342,35 @@ class CommercialsScraperOrchestrator:
                 if result['excel_s3_url']:
                     logger.info(f"    S3: {result['excel_s3_url']}")
             
+            logger.info("\nUploading JSON summary...")
+            json_summary = {
+                "scraped_at": datetime.now().isoformat(),
+                "saved_to_s3_date": self.save_date.strftime('%Y-%m-%d'),
+                "total_categories": len(results),
+                "total_ads": total_ads,
+                "categories": [
+                    {
+                        "name": r["category"],
+                        "slug": r["slug"],
+                        "total_ads": r["total_ads"],
+                    }
+                    for r in results
+                    if r["total_ads"] > 0
+                ],
+            }
+            temp_json = self.temp_dir / f"summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            with open(temp_json, 'w', encoding='utf-8') as f:
+                json.dump(json_summary, f, ensure_ascii=False, indent=2)
+            s3_json_path = await asyncio.to_thread(
+                self.s3_helper.upload_file,
+                str(temp_json),
+                f"json-files/summary_{self.save_date.strftime('%Y%m%d')}.json",
+                self.save_date
+            )
+            if s3_json_path:
+                logger.info(f"✓ Uploaded JSON summary")
+            temp_json.unlink(missing_ok=True)
+            
             logger.info(f"\nS3 Partition: {self.s3_helper.get_partition_prefix(self.save_date)}")
             logger.info("="*60)
             

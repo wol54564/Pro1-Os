@@ -55,6 +55,7 @@ import openpyxl
 import pandas as pd
 import yaml
 
+from ads_counter import count_scraper_ads
 from monitor_r2 import (
     build_r2_client,
     load_site_config_from_r2,
@@ -1056,22 +1057,25 @@ def print_failure_summary(results: List[Dict]) -> None:
 
 def print_summary_table(results: List[Dict]) -> None:
     """Print a human-readable table to stdout."""
-    print("\n" + "=" * 70)
-    print(f"{'SCRAPER':<30}  {'FILES':<6}  {'CHECKS':<10}  STATUS")
-    print("=" * 70)
+    print("\n" + "=" * 82)
+    print(f"{'SCRAPER':<28}  {'FILES':<6}  {'CHECKS':<10}  {'ADS':<8}  STATUS")
+    print("=" * 82)
     for r in results:
         status  = PASS if r["all_passed"] else FAIL
         missing = MISS if r["files_found"] == 0 and not r.get("files_optional") else ""
         optional = " (optional)" if r.get("files_optional") and r["files_found"] == 0 else ""
+        ads = r.get("unique_ads", 0)
         print(
-            f"{r['scraper']:<30}  "
+            f"{r['scraper']:<28}  "
             f"{r['files_found']:<6}  "
             f"{r['checks_passed']}/{r['checks_total']:<7}  "
+            f"{ads:<8}  "
             f"{status}{optional} {missing}"
         )
-    print("=" * 70)
+    print("=" * 82)
     total_pass = sum(1 for r in results if r["all_passed"])
-    print(f"\nTotal: {total_pass}/{len(results)} scrapers fully passed\n")
+    total_ads = sum(r.get("unique_ads") or 0 for r in results)
+    print(f"\nTotal: {total_pass}/{len(results)} scrapers fully passed · {total_ads} unique ads\n")
 
 
 def build_github_run_meta(site: Dict, started_at: datetime, validation_passed: bool) -> Dict:
@@ -1296,9 +1300,13 @@ def main():
             "checks_total":   0,
             "all_passed":     True,
             "file_results":   [],
+            "unique_ads":     0,
+            "total_rows":     0,
+            "ads_source":     "none",
         }
 
         all_xlsx: List[Dict] = []
+        excel_downloads: List[tuple] = []
         seen_keys: set = set()
         tried_prefixes: List[str] = []
         for dt in dates_to_check:
@@ -1337,6 +1345,15 @@ def main():
                     f"tried e.g. {sample}{extra}"
                 )
                 scraper_result["all_passed"] = False
+            partition_dt = partition_date_for_data_date(dates_to_check[0])
+            ads_stats = count_scraper_ads(
+                r2_client, bucket, r2_base, partition_dt, []
+            )
+            scraper_result["unique_ads"] = ads_stats.get("unique_ads") or 0
+            scraper_result["total_rows"] = ads_stats.get("total_rows") or 0
+            scraper_result["ads_source"] = ads_stats.get("ads_source", "none")
+            if ads_stats.get("json_summary_key"):
+                scraper_result["json_summary_key"] = ads_stats["json_summary_key"]
             all_results.append(scraper_result)
             full_report["scrapers"][scraper_name] = scraper_result
             continue
@@ -1346,6 +1363,7 @@ def main():
             if raw is None:
                 continue
 
+            excel_downloads.append((xlsx_meta["key"], raw))
             inspected = inspect_excel(raw, xlsx_meta["key"])
             inspected["size_bytes"] = xlsx_meta["size_bytes"]
 
@@ -1393,13 +1411,24 @@ def main():
                     xlsx_meta["date"],
                 )
 
+        partition_dt = partition_date_for_data_date(dates_to_check[0])
+        ads_stats = count_scraper_ads(
+            r2_client, bucket, r2_base, partition_dt, excel_downloads
+        )
+        scraper_result["unique_ads"] = ads_stats.get("unique_ads") or 0
+        scraper_result["total_rows"] = ads_stats.get("total_rows") or 0
+        scraper_result["ads_source"] = ads_stats.get("ads_source", "none")
+        if ads_stats.get("json_summary_key"):
+            scraper_result["json_summary_key"] = ads_stats["json_summary_key"]
+
         all_results.append(scraper_result)
         full_report["scrapers"][scraper_name] = scraper_result
         status = PASS if scraper_result["all_passed"] else FAIL
         log.info(
             f"  {status} {scraper_name}: "
             f"{scraper_result['files_found']} file(s), "
-            f"{scraper_result['checks_passed']}/{scraper_result['checks_total']} checks"
+            f"{scraper_result['checks_passed']}/{scraper_result['checks_total']} checks, "
+            f"{scraper_result['unique_ads']} unique ads ({scraper_result['ads_source']})"
         )
         if not scraper_result["all_passed"]:
             log_scraper_failures(
@@ -1409,6 +1438,9 @@ def main():
             )
 
     # ── Outputs ───────────────────────────────────────────────────────────────
+    total_unique_ads = sum(r.get("unique_ads") or 0 for r in all_results)
+    full_report["total_unique_ads"] = total_unique_ads
+
     alerts = collect_alerts(all_results, listing_date_str)
     full_report["alerts"] = alerts
     full_report["alert_count"] = len(alerts)

@@ -153,12 +153,16 @@ def summarize_site(
             "scrapers_total": 0,
             "scrapers_passed": 0,
             "alert_count": 0,
+            "unique_ads": 0,
         }
 
     results = _scraper_results(report)
     total   = len(results)
     passed  = sum(1 for s in results if s.get("all_passed"))
     alerts  = report.get("alert_count", len(report.get("alerts", [])))
+    unique_ads = report.get("total_unique_ads")
+    if unique_ads is None:
+        unique_ads = sum(s.get("unique_ads") or 0 for s in results)
 
     return {
         **base,
@@ -172,6 +176,7 @@ def summarize_site(
         "scrapers_total":  total,
         "scrapers_passed": passed,
         "alert_count":     alerts,
+        "unique_ads":      unique_ads,
         "report":          report,
     }
 
@@ -233,6 +238,7 @@ def main():
     sites_missing = sum(1 for s in site_summaries if s["status"] == "missing")
     sites_failed  = sum(1 for s in site_summaries if s["status"] == "failed")
     total_alerts  = sum(s["alert_count"] for s in site_summaries)
+    total_unique_ads = sum(s.get("unique_ads") or 0 for s in site_summaries)
 
     merged = {
         "run_date":      partition_date,
@@ -244,18 +250,23 @@ def main():
         "sites_failed":  sites_failed,
         "sites_missing": sites_missing,
         "total_alerts":  total_alerts,
+        "total_unique_ads": total_unique_ads,
         "sites":         site_summaries,
     }
 
     key = upload_merged(client, bucket, partition_date, merged, root)
 
-    print(f"\n{'SITE':<22} {'STATUS':<10} {'SCRAPERS':<12} ALERTS")
-    print("-" * 55)
+    print(f"\n{'SITE':<22} {'STATUS':<10} {'SCRAPERS':<12} {'ADS':<10} ALERTS")
+    print("-" * 65)
     for s in site_summaries:
         sc = f"{s['scrapers_passed']}/{s['scrapers_total']}"
-        print(f"{s['display_name']:<22} {s['status']:<10} {sc:<12} {s['alert_count']}")
-    print("-" * 55)
-    print(f"Hub summary: {sites_ok}/{len(sites)} sites OK · {total_alerts} total alerts")
+        ads = s.get("unique_ads", 0)
+        print(f"{s['display_name']:<22} {s['status']:<10} {sc:<12} {ads:<10} {s['alert_count']}")
+    print("-" * 65)
+    print(
+        f"Hub summary: {sites_ok}/{len(sites)} sites OK · "
+        f"{total_unique_ads} unique ads · {total_alerts} total alerts"
+    )
     print(f"Merged → r2://{bucket}/{key}\n")
 
 

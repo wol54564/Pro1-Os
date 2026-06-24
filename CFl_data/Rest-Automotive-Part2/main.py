@@ -404,6 +404,38 @@ class AutomotiveServicesScraperOrchestrator:
             logger.info("="*60)
             
             await self.upload_excel_to_R2(excel_path)
+
+            total_listings = sum(len(d.get("listings", [])) for d in all_data)
+            logger.info("\nUploading JSON summary...")
+            json_summary = {
+                "scraped_at": datetime.now().isoformat(),
+                "data_scraped_date": self.scrape_date.strftime('%Y-%m-%d'),
+                "saved_to_s3_date": self.save_date.strftime('%Y-%m-%d'),
+                "total_subcategories": len(all_data),
+                "total_listings": total_listings,
+                "subcategories": [
+                    {
+                        "name_ar": d.get("subcategory", {}).get("name_ar"),
+                        "name_en": d.get("subcategory", {}).get("name_en"),
+                        "slug": d.get("subcategory", {}).get("slug"),
+                        "listings_count": len(d.get("listings", [])),
+                    }
+                    for d in all_data
+                    if d.get("listings")
+                ],
+            }
+            temp_json = self.temp_dir / f"summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            with open(temp_json, 'w', encoding='utf-8') as f:
+                json.dump(json_summary, f, ensure_ascii=False, indent=2)
+            R2_json_path = await asyncio.to_thread(
+                self.R2_helper.upload_file,
+                str(temp_json),
+                f"json-files/summary_{self.save_date.strftime('%Y%m%d')}.json",
+                self.save_date
+            )
+            if R2_json_path:
+                logger.info("[OK] Uploaded JSON summary")
+            temp_json.unlink(missing_ok=True)
             
             logger.info("\n" + "="*60)
             logger.info("[OK] ALL TASKS COMPLETED SUCCESSFULLY!")

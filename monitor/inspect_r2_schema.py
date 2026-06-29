@@ -309,6 +309,10 @@ _SCRAPER_PROFILES: Dict[str, Dict] = {
     "Automotive-Cars-and-Trucks": {"min_file_size_kb": 5},
     "Electronics": {"min_file_size_kb": 5},
     "Furniture": {"min_file_size_kb": 5},
+    "Rest-Automotive-Part3": {
+        # One sheet per business — row counts are too volatile for per-sheet trends
+        "skip_sheet_trend_checks": True,
+    },
 }
 
 # Normalized column names that are enrichment / metadata — missing is OK
@@ -578,6 +582,9 @@ def validate_trends(
     row_min_pct = trend_cfg.get("min_row_pct_of_hist_min", 30) / 100.0
     row_max_pct = trend_cfg.get("max_row_pct_of_hist_max", 300) / 100.0
     size_min_pct = trend_cfg.get("min_file_size_pct_of_hist_min", 50) / 100.0
+    skip_sheet_trends = _SCRAPER_PROFILES.get(scraper_name, {}).get(
+        "skip_sheet_trend_checks", False
+    )
 
     size_kb = inspected.get("size_bytes", 0) / 1024
     hist_size_min = stats_entry.get("file_size_kb", {}).get("min")
@@ -591,6 +598,10 @@ def validate_trends(
         })
 
     sheet_stats = stats_entry.get("sheets", {})
+    if skip_sheet_trends:
+        passed = all(c["passed"] for c in checks)
+        return {"passed": passed, "checks": checks}
+
     for sheet in inspected.get("sheets", []):
         sname = sheet["name"]
         if sname == "Info":

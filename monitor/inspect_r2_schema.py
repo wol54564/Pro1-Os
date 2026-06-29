@@ -394,6 +394,9 @@ def resolve_required_columns(
         canon = canonical_column(col)
         if canon in observed:
             continue
+        # q84sale listing scrapers often store slug only; URL is https://…/listing/{slug}
+        if canon == "link" and "slug" in observed:
+            continue
         if canon in _OPTIONAL_CANONICAL_COLUMNS or canon in schema_opt:
             missing_optional.append(col)
         else:

@@ -307,8 +307,16 @@ _SCRAPER_PROFILES: Dict[str, Dict] = {
     },
     "Services": {"min_file_size_kb": 5},
     "Automotive-Cars-and-Trucks": {"min_file_size_kb": 5},
-    "Electronics": {"min_file_size_kb": 5},
+    "Electronics": {
+        "min_file_size_kb": 5,
+        # One sheet per child category — row counts are too volatile for per-sheet trends
+        "skip_sheet_trend_checks": True,
+    },
     "Furniture": {"min_file_size_kb": 5},
+    "Property": {
+        # property-offices (and similar) use one sheet per business — volatile row counts
+        "skip_sheet_trend_checks": True,
+    },
     "Rest-Automotive-Part3": {
         # One sheet per business — row counts are too volatile for per-sheet trends
         "skip_sheet_trend_checks": True,

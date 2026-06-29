@@ -1,8 +1,11 @@
 name: "Monitor Hub — Aggregate All Sites"
 
 on:
-  schedule:
-    - cron: '0 10 * * *'   # Daily 10:00 UTC — after per-site monitors at 08:00
+  workflow_run:
+    workflows:
+      - "Schema Monitor"
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       date:
@@ -30,6 +33,10 @@ jobs:
   aggregate:
     name: "Merge reports and export dashboard tables"
     runs-on: ubuntu-22.04
+    if: >
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion != 'cancelled') ||
+      github.event_name == 'workflow_dispatch'
     env:
       CF_R2_ACCESS_KEY_ID:     ${{ secrets.CF_R2_ACCESS_KEY_ID }}
       CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
@@ -49,7 +56,7 @@ jobs:
           python -c "import duckdb; print('duckdb', duckdb.__version__)"
 
       - name: Aggregate site reports
-        if: ${{ !inputs.backfill }}
+        if: github.event_name != 'workflow_dispatch' || inputs.backfill != true
         run: |
           FLAGS=""
           DATE="${{ github.event.inputs.date }}"

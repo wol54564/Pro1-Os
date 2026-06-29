@@ -2,6 +2,12 @@ name: "Schema Monitor"
 
 # ── Triggers ────────────────────────────────────────────────────────────────
 on:
+  # Fallback if the Batch C-2 chain fails to trigger the monitor (08:00 UTC Mon–Sat)
+  schedule:
+    - cron: '0 8 * * 1-6'   # Mon–Sat  →  daily-check job
+    - cron: '0 9 * * 0'     # Sunday   →  weekly-stats job
+
+  # Also fires when Batch C-2 is started manually (not via GITHUB_TOKEN chain)
   workflow_run:
     workflows:
       - "Batch C-2"
@@ -51,12 +57,13 @@ jobs:
   daily-check:
     name: "Daily schema validation"
     runs-on: ubuntu-22.04
-    # Runs after Batch C-2 completes or on manual dispatch (not weekly refresh)
+    # Runs after Batch C-2 (via gh trigger), on schedule, workflow_run, or manual dispatch
     if: >
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.conclusion != 'cancelled') ||
       (github.event_name == 'workflow_dispatch' &&
-       github.event.inputs.weekly_refresh != 'true')
+       github.event.inputs.weekly_refresh != 'true') ||
+      (github.event_name == 'schedule' && github.event.schedule == '0 8 * * 1-6') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion != 'cancelled')
 
     env:
       CF_R2_ACCESS_KEY_ID:       ${{ secrets.CF_R2_ACCESS_KEY_ID }}
@@ -126,10 +133,11 @@ jobs:
   weekly-stats:
     name: "Weekly stats refresh (last 7 days)"
     runs-on: ubuntu-22.04
-    # Manual weekly refresh only (replaces former Sunday schedule)
+    # Sunday schedule or manual weekly refresh
     if: >
-      github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.weekly_refresh == 'true'
+      (github.event_name == 'schedule' && github.event.schedule == '0 9 * * 0') ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.event.inputs.weekly_refresh == 'true')
 
     env:
       CF_R2_ACCESS_KEY_ID:       ${{ secrets.CF_R2_ACCESS_KEY_ID }}

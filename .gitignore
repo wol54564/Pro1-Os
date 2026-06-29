@@ -40,3 +40,4 @@ dashboard/basex/sources/**/connection.options.yaml
 dashboard/README.md
 dashboard/basex
 dashboard/basex/*
+monitor/R2_FILES_COUNTING_PROMPT.md

@@ -76,6 +76,7 @@ SCHEMA_STATEMENTS = [
       sites_missing        INTEGER,
       total_alerts         INTEGER,
       total_unique_ads     INTEGER,
+      total_r2_files       INTEGER,
       hub_prefix           VARCHAR,
       PRIMARY KEY (hub_partition_date)
     )
@@ -102,6 +103,7 @@ SCHEMA_STATEMENTS = [
       scrapers_passed      INTEGER,
       alert_count          INTEGER,
       unique_ads           INTEGER,
+      r2_file_count        INTEGER,
       run_date             DATE,
       inspect_date         DATE,
       report_fallback      BOOLEAN DEFAULT FALSE,
@@ -121,6 +123,7 @@ SCHEMA_STATEMENTS = [
       unique_ads           INTEGER,
       total_rows           INTEGER,
       ads_source           VARCHAR,
+      r2_file_count        INTEGER,
       PRIMARY KEY (hub_partition_date, site_id, scraper)
     )
     """,
@@ -152,6 +155,9 @@ MIGRATION_STATEMENTS = [
     "ALTER TABLE scraper_daily ADD COLUMN IF NOT EXISTS unique_ads INTEGER",
     "ALTER TABLE scraper_daily ADD COLUMN IF NOT EXISTS total_rows INTEGER",
     "ALTER TABLE scraper_daily ADD COLUMN IF NOT EXISTS ads_source VARCHAR",
+    "ALTER TABLE hub_daily ADD COLUMN IF NOT EXISTS total_r2_files INTEGER",
+    "ALTER TABLE site_daily ADD COLUMN IF NOT EXISTS r2_file_count INTEGER",
+    "ALTER TABLE scraper_daily ADD COLUMN IF NOT EXISTS r2_file_count INTEGER",
 ]
 
 

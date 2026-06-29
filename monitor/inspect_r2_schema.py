@@ -56,6 +56,7 @@ import pandas as pd
 import yaml
 
 from ads_counter import count_scraper_ads
+from r2_file_counter import count_scraper_r2_files, count_site_r2_files
 from monitor_r2 import (
     build_r2_client,
     load_site_config_from_r2,
@@ -1058,24 +1059,30 @@ def print_failure_summary(results: List[Dict]) -> None:
 def print_summary_table(results: List[Dict]) -> None:
     """Print a human-readable table to stdout."""
     print("\n" + "=" * 82)
-    print(f"{'SCRAPER':<28}  {'FILES':<6}  {'CHECKS':<10}  {'ADS':<8}  STATUS")
-    print("=" * 82)
+    print(f"{'SCRAPER':<28}  {'FILES':<6}  {'R2':<8}  {'CHECKS':<10}  {'ADS':<8}  STATUS")
+    print("=" * 92)
     for r in results:
         status  = PASS if r["all_passed"] else FAIL
         missing = MISS if r["files_found"] == 0 and not r.get("files_optional") else ""
         optional = " (optional)" if r.get("files_optional") and r["files_found"] == 0 else ""
         ads = r.get("unique_ads", 0)
+        r2_total = r.get("r2_file_count", 0)
         print(
             f"{r['scraper']:<28}  "
             f"{r['files_found']:<6}  "
+            f"{r2_total:<8}  "
             f"{r['checks_passed']}/{r['checks_total']:<7}  "
             f"{ads:<8}  "
             f"{status}{optional} {missing}"
         )
-    print("=" * 82)
+    print("=" * 92)
     total_pass = sum(1 for r in results if r["all_passed"])
     total_ads = sum(r.get("unique_ads") or 0 for r in results)
-    print(f"\nTotal: {total_pass}/{len(results)} scrapers fully passed · {total_ads} unique ads\n")
+    total_r2 = sum(r.get("r2_file_count") or 0 for r in results)
+    print(
+        f"\nTotal: {total_pass}/{len(results)} scrapers fully passed · "
+        f"{total_ads} unique ads · {total_r2} R2 objects (scrapers sum)\n"
+    )
 
 
 def build_github_run_meta(site: Dict, started_at: datetime, validation_passed: bool) -> Dict:
@@ -1296,6 +1303,7 @@ def main():
         scraper_result = {
             "scraper":        scraper_name,
             "files_found":    0,
+            "r2_file_count":  0,
             "checks_passed":  0,
             "checks_total":   0,
             "all_passed":     True,
@@ -1304,6 +1312,8 @@ def main():
             "total_rows":     0,
             "ads_source":     "none",
         }
+
+        scraper_result["r2_file_count"] = count_scraper_r2_files(r2_client, bucket, r2_base)
 
         all_xlsx: List[Dict] = []
         excel_downloads: List[tuple] = []
@@ -1426,7 +1436,8 @@ def main():
         status = PASS if scraper_result["all_passed"] else FAIL
         log.info(
             f"  {status} {scraper_name}: "
-            f"{scraper_result['files_found']} file(s), "
+            f"{scraper_result['files_found']} file(s) today, "
+            f"{scraper_result['r2_file_count']} R2 object(s) total, "
             f"{scraper_result['checks_passed']}/{scraper_result['checks_total']} checks, "
             f"{scraper_result['unique_ads']} unique ads ({scraper_result['ads_source']})"
         )
@@ -1440,6 +1451,12 @@ def main():
     # ── Outputs ───────────────────────────────────────────────────────────────
     total_unique_ads = sum(r.get("unique_ads") or 0 for r in all_results)
     full_report["total_unique_ads"] = total_unique_ads
+
+    site_r2_prefix = site.get("r2_prefix", "").strip("/")
+    if site_r2_prefix:
+        full_report["total_r2_files"] = count_site_r2_files(r2_client, bucket, site_r2_prefix)
+    else:
+        full_report["total_r2_files"] = sum(r.get("r2_file_count") or 0 for r in all_results)
 
     alerts = collect_alerts(all_results, listing_date_str)
     full_report["alerts"] = alerts

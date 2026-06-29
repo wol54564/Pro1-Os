@@ -64,6 +64,7 @@ HUB_DAILY_COLS = [
     "sites_missing",
     "total_alerts",
     "total_unique_ads",
+    "total_r2_files",
     "hub_prefix",
 ]
 
@@ -88,6 +89,7 @@ SITE_DAILY_COLS = [
     "scrapers_passed",
     "alert_count",
     "unique_ads",
+    "r2_file_count",
     "run_date",
     "inspect_date",
     "report_fallback",
@@ -105,6 +107,7 @@ SCRAPER_DAILY_COLS = [
     "unique_ads",
     "total_rows",
     "ads_source",
+    "r2_file_count",
 ]
 
 ALERTS_COLS = [
@@ -166,6 +169,7 @@ def flatten_hub(
         "sites_missing": merged.get("sites_missing"),
         "total_alerts": merged.get("total_alerts"),
         "total_unique_ads": merged.get("total_unique_ads"),
+        "total_r2_files": merged.get("total_r2_files"),
         "hub_prefix": merged.get("hub_prefix"),
     }
 
@@ -214,6 +218,7 @@ def flatten_hub(
             "scrapers_passed": site.get("scrapers_passed"),
             "alert_count": site.get("alert_count"),
             "unique_ads": site.get("unique_ads"),
+            "r2_file_count": site.get("r2_file_count"),
             "run_date": site.get("run_date"),
             "inspect_date": site.get("inspect_date"),
             "report_fallback": bool(site.get("report_fallback", False)),
@@ -231,6 +236,7 @@ def flatten_hub(
                 "unique_ads": sr.get("unique_ads"),
                 "total_rows": sr.get("total_rows"),
                 "ads_source": sr.get("ads_source"),
+                "r2_file_count": sr.get("r2_file_count"),
             })
 
         alerts = report.get("alerts") or []

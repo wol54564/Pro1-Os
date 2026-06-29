@@ -154,6 +154,7 @@ def summarize_site(
             "scrapers_passed": 0,
             "alert_count": 0,
             "unique_ads": 0,
+            "r2_file_count": 0,
         }
 
     results = _scraper_results(report)
@@ -163,6 +164,9 @@ def summarize_site(
     unique_ads = report.get("total_unique_ads")
     if unique_ads is None:
         unique_ads = sum(s.get("unique_ads") or 0 for s in results)
+    r2_file_count = report.get("total_r2_files")
+    if r2_file_count is None:
+        r2_file_count = sum(s.get("r2_file_count") or 0 for s in results)
 
     return {
         **base,
@@ -177,6 +181,7 @@ def summarize_site(
         "scrapers_passed": passed,
         "alert_count":     alerts,
         "unique_ads":      unique_ads,
+        "r2_file_count":   r2_file_count,
         "report":          report,
     }
 
@@ -239,6 +244,7 @@ def main():
     sites_failed  = sum(1 for s in site_summaries if s["status"] == "failed")
     total_alerts  = sum(s["alert_count"] for s in site_summaries)
     total_unique_ads = sum(s.get("unique_ads") or 0 for s in site_summaries)
+    total_r2_files = sum(s.get("r2_file_count") or 0 for s in site_summaries)
 
     merged = {
         "run_date":      partition_date,
@@ -251,21 +257,23 @@ def main():
         "sites_missing": sites_missing,
         "total_alerts":  total_alerts,
         "total_unique_ads": total_unique_ads,
+        "total_r2_files": total_r2_files,
         "sites":         site_summaries,
     }
 
     key = upload_merged(client, bucket, partition_date, merged, root)
 
-    print(f"\n{'SITE':<22} {'STATUS':<10} {'SCRAPERS':<12} {'ADS':<10} ALERTS")
-    print("-" * 65)
+    print(f"\n{'SITE':<22} {'STATUS':<10} {'SCRAPERS':<12} {'ADS':<10} {'R2 FILES':<12} ALERTS")
+    print("-" * 78)
     for s in site_summaries:
         sc = f"{s['scrapers_passed']}/{s['scrapers_total']}"
         ads = s.get("unique_ads", 0)
-        print(f"{s['display_name']:<22} {s['status']:<10} {sc:<12} {ads:<10} {s['alert_count']}")
-    print("-" * 65)
+        r2_files = s.get("r2_file_count", 0)
+        print(f"{s['display_name']:<22} {s['status']:<10} {sc:<12} {ads:<10} {r2_files:<12} {s['alert_count']}")
+    print("-" * 78)
     print(
         f"Hub summary: {sites_ok}/{len(sites)} sites OK · "
-        f"{total_unique_ads} unique ads · {total_alerts} total alerts"
+        f"{total_unique_ads} unique ads · {total_r2_files} R2 files · {total_alerts} total alerts"
     )
     print(f"Merged → r2://{bucket}/{key}\n")
 

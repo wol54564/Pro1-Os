@@ -1131,8 +1131,13 @@ def build_github_run_meta(site: Dict, started_at: datetime, validation_passed: b
             "github_actor": os.environ.get("GITHUB_ACTOR", ""),
             "runner_os": os.environ.get("RUNNER_OS", ""),
         })
-    elif run_place not in ("github", ""):
-        meta["workflow_name"] = site.get("workflow_name") or "monitor"
+
+    if not meta.get("workflow_name"):
+        meta["workflow_name"] = (
+            site.get("workflow_name")
+            or os.environ.get("GITHUB_WORKFLOW")
+            or ("Schema Monitor" if run_place == "github" else "monitor")
+        )
 
     return meta
 

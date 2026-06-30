@@ -146,6 +146,67 @@ def _registry_lookup(registry: Optional[Dict]) -> Dict[str, Dict]:
     return lookup
 
 
+def _status_to_workflow_status(site_status: Optional[str]) -> Optional[str]:
+    if site_status == "ok":
+        return "success"
+    if site_status == "failed":
+        return "failure"
+    return None
+
+
+def _duration_from_github_run(github_run: Dict) -> Optional[int]:
+    duration = github_run.get("duration_sec")
+    if duration is not None:
+        return int(duration)
+    started = github_run.get("started_at")
+    finished = github_run.get("finished_at")
+    if not started or not finished:
+        return None
+    try:
+        start_dt = datetime.fromisoformat(str(started).replace("Z", "+00:00"))
+        finish_dt = datetime.fromisoformat(str(finished).replace("Z", "+00:00"))
+        return max(0, int((finish_dt - start_dt).total_seconds()))
+    except (ValueError, TypeError):
+        return None
+
+
+def _resolve_workflow_meta(
+    report: Dict,
+    reg: Dict,
+    site_status: Optional[str],
+    run_place: str,
+) -> Dict[str, Any]:
+    """
+    Resolve CI/workflow fields for site_daily.
+
+    Older report.json files may omit github_run; fall back to registry and
+    monitor status so the dashboard is not blank.
+    """
+    github_run = report.get("github_run") or {}
+
+    workflow_name = (
+        github_run.get("workflow_name")
+        or reg.get("workflow_name")
+        or reg.get("monitor_workflow")
+        or report.get("workflow_name")
+    )
+    if not workflow_name:
+        workflow_name = "Schema Monitor" if run_place == "github" else "monitor"
+
+    workflow_status = (
+        github_run.get("workflow_status")
+        or _status_to_workflow_status(site_status)
+    )
+
+    return {
+        "workflow_name": workflow_name,
+        "workflow_run_number": github_run.get("workflow_run_number"),
+        "workflow_run_id": github_run.get("workflow_run_id"),
+        "workflow_status": workflow_status,
+        "workflow_duration_sec": _duration_from_github_run(github_run),
+    }
+
+
 def flatten_hub(
     merged: Dict,
     registry: Optional[Dict] = None,
@@ -196,6 +257,9 @@ def flatten_hub(
             or github_run.get("run_place")
             or "github"
         )
+        workflow_meta = _resolve_workflow_meta(
+            report, reg, site.get("status"), run_place
+        )
 
         site_rows.append({
             "hub_partition_date": hub_partition,
@@ -207,11 +271,11 @@ def flatten_hub(
             "repo": site.get("repo") or reg.get("repo"),
             "github_username": reg.get("github_username"),
             "run_place": run_place,
-            "workflow_name": github_run.get("workflow_name"),
-            "workflow_run_number": github_run.get("workflow_run_number"),
-            "workflow_run_id": github_run.get("workflow_run_id"),
-            "workflow_status": github_run.get("workflow_status"),
-            "workflow_duration_sec": github_run.get("duration_sec"),
+            "workflow_name": workflow_meta["workflow_name"],
+            "workflow_run_number": workflow_meta["workflow_run_number"],
+            "workflow_run_id": workflow_meta["workflow_run_id"],
+            "workflow_status": workflow_meta["workflow_status"],
+            "workflow_duration_sec": workflow_meta["workflow_duration_sec"],
             "schedule": schedule,
             "status": site.get("status"),
             "scrapers_total": site.get("scrapers_total"),

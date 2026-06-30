@@ -46,6 +46,11 @@ from monitor_r2 import (
     put_bytes,
     _normalize_schedule,
 )
+from github_workflows import (
+    format_workflow_label,
+    is_monitor_workflow,
+    resolve_workflow_names,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -179,31 +184,59 @@ def _resolve_workflow_meta(
     """
     Resolve CI/workflow fields for site_daily.
 
-    Older report.json files may omit github_run; fall back to registry and
-    monitor status so the dashboard is not blank.
+    Uses scraper pipeline metadata from report.github_run. Ignores Schema Monitor
+    runs stored in older reports; falls back to registry workflows list.
     """
     github_run = report.get("github_run") or {}
+    stored_name = github_run.get("workflow_name")
 
-    workflow_name = (
-        github_run.get("workflow_name")
-        or reg.get("workflow_name")
-        or reg.get("monitor_workflow")
-        or report.get("workflow_name")
-    )
+    workflow_name = None
+    if stored_name and not is_monitor_workflow(stored_name):
+        workflow_name = stored_name
+
     if not workflow_name:
-        workflow_name = "Schema Monitor" if run_place == "github" else "monitor"
+        configured = resolve_workflow_names(reg) or resolve_workflow_names(report)
+        workflow_name = format_workflow_label(configured) if configured else None
 
-    workflow_status = (
-        github_run.get("workflow_status")
-        or _status_to_workflow_status(site_status)
-    )
+    if not workflow_name and github_run.get("workflows"):
+        api_names = [
+            str(w.get("name"))
+            for w in github_run["workflows"]
+            if w.get("name") and not is_monitor_workflow(str(w.get("name")))
+        ]
+        workflow_name = format_workflow_label(api_names) if api_names else None
+
+    if not workflow_name:
+        legacy = reg.get("workflow_name") or report.get("workflow_name")
+        if legacy and not is_monitor_workflow(str(legacy)):
+            workflow_name = str(legacy)
+
+    if not workflow_name:
+        workflow_name = "—"
+
+    workflow_status = github_run.get("workflow_status")
+    if is_monitor_workflow(stored_name):
+        workflow_status = None
+
+    if workflow_status is None:
+        workflow_status = _status_to_workflow_status(site_status)
+
+    duration = _duration_from_github_run(github_run)
+    if is_monitor_workflow(stored_name):
+        duration = None
+
+    run_id = github_run.get("workflow_run_id")
+    run_number = github_run.get("workflow_run_number")
+    if is_monitor_workflow(stored_name):
+        run_id = None
+        run_number = None
 
     return {
         "workflow_name": workflow_name,
-        "workflow_run_number": github_run.get("workflow_run_number"),
-        "workflow_run_id": github_run.get("workflow_run_id"),
+        "workflow_run_number": run_number,
+        "workflow_run_id": run_id,
         "workflow_status": workflow_status,
-        "workflow_duration_sec": _duration_from_github_run(github_run),
+        "workflow_duration_sec": duration,
     }
 
 

@@ -47,6 +47,10 @@ concurrency:
   group: schema-monitor
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  actions: read
+
 env:
   PYTHONUTF8: "1"
 

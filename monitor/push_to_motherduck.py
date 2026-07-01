@@ -116,6 +116,7 @@ SCHEMA_STATEMENTS = [
       run_date             DATE,
       inspect_date         DATE,
       report_fallback      BOOLEAN DEFAULT FALSE,
+      uses_proxy           BOOLEAN,
       PRIMARY KEY (hub_partition_date, site_id)
     )
     """,
@@ -190,6 +191,7 @@ MIGRATION_STATEMENTS = [
     "ALTER TABLE scraper_daily ADD COLUMN IF NOT EXISTS duration_sec DOUBLE",
     "ALTER TABLE scraper_daily ADD COLUMN IF NOT EXISTS metrics_source VARCHAR",
     "ALTER TABLE scraper_daily ADD COLUMN IF NOT EXISTS failed_items_summary VARCHAR",
+    "ALTER TABLE site_daily ADD COLUMN IF NOT EXISTS uses_proxy BOOLEAN",
 ]
 
 

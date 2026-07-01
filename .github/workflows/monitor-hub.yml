@@ -1,11 +1,6 @@
 name: "Monitor Hub — Aggregate All Sites"
 
 on:
-  workflow_run:
-    workflows:
-      - "Schema Monitor"
-    types:
-      - completed
   workflow_dispatch:
     inputs:
       date:
@@ -33,10 +28,7 @@ jobs:
   aggregate:
     name: "Merge reports and export dashboard tables"
     runs-on: ubuntu-22.04
-    if: >
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.conclusion != 'cancelled') ||
-      github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch'
     env:
       CF_R2_ACCESS_KEY_ID:     ${{ secrets.CF_R2_ACCESS_KEY_ID }}
       CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}

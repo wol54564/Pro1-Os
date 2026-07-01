@@ -144,6 +144,7 @@ def merge_registry_site(site: Dict, registry: Optional[Dict]) -> Dict:
         "schedule",
         "workflows",
         "workflow_name",
+        "uses_proxy",
     ):
         if merged.get(key) in (None, "", []):
             val = reg_row.get(key)

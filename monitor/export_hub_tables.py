@@ -107,6 +107,7 @@ SITE_DAILY_COLS = [
     "run_date",
     "inspect_date",
     "report_fallback",
+    "uses_proxy",
 ]
 
 SCRAPER_DAILY_COLS = [
@@ -345,6 +346,15 @@ def _hub_request_totals(site_rows: List[Dict]) -> Dict[str, Any]:
     }
 
 
+def _resolve_uses_proxy(site: Dict, reg: Dict, report: Dict) -> Optional[bool]:
+    """True/False from merged site row, report, or registry; None if unset."""
+    for src in (site, report, reg):
+        val = src.get("uses_proxy")
+        if val is not None:
+            return bool(val)
+    return None
+
+
 def flatten_hub(
     merged: Dict,
     registry: Optional[Dict] = None,
@@ -425,6 +435,7 @@ def flatten_hub(
             "run_date": site.get("run_date"),
             "inspect_date": site.get("inspect_date"),
             "report_fallback": bool(site.get("report_fallback", False)),
+            "uses_proxy": _resolve_uses_proxy(site, reg, report),
         })
         for scraper_name, sr in _scraper_entries(report):
             scraper_rows.append({

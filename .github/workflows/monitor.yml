@@ -49,7 +49,7 @@ concurrency:
 
 permissions:
   contents: read
-  actions: read
+  actions: write
 
 env:
   PYTHONUTF8: "1"
@@ -133,6 +133,12 @@ jobs:
 
       # monitor_stats.yml is written directly to R2 by the script — no git commit needed.
 
+      - name: Trigger Monitor Hub
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run "monitor-hub.yml" --repo "${{ github.repository }}"
+
   # ── Job 2: weekly stats refresh ───────────────────────────────────────────
   weekly-stats:
     name: "Weekly stats refresh (last 7 days)"
@@ -173,4 +179,10 @@ jobs:
             --quality
 
       # monitor_stats.yml is written directly to R2 by the script — no git commit needed.
+
+      - name: Trigger Monitor Hub
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run "monitor-hub.yml" --repo "${{ github.repository }}"
 

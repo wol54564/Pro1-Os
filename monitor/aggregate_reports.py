@@ -141,6 +141,7 @@ def summarize_site(
         "website":      site.get("website"),
         "country":      site.get("country"),
         "repo":         site.get("repo"),
+        "uses_proxy":   site.get("uses_proxy"),
         "run_date":     report_partition_date,
         "hub_partition_date": partition_date,
     }

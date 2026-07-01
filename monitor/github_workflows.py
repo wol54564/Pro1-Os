@@ -11,18 +11,34 @@ import json
 import logging
 import os
 import urllib.error
-import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+
+import yaml
 
 log = logging.getLogger("monitor")
 
 MONITOR_WORKFLOW_NAMES = frozenset({
     "Schema Monitor",
+    "R2 Schema Monitor",
+    "R2 Excel Schema Monitor",
+    "R2 CSV Monitor",
+    "KCSB R2 Schema Monitor",
     "Monitor Hub — Aggregate All Sites",
+    "Monitor Categories",
     "monitor",
 })
+
+_SCHEDULE_LOOKBACK_DAYS = {
+    "daily": 2,
+    "every_2_days": 4,
+    "weekly": 8,
+    "biweekly": 15,
+    "monthly": 35,
+    "quarterly": 125,
+}
 
 
 def is_monitor_workflow(name: Optional[str]) -> bool:
@@ -30,26 +46,67 @@ def is_monitor_workflow(name: Optional[str]) -> bool:
         return False
     if name in MONITOR_WORKFLOW_NAMES:
         return True
-    return name.startswith("Monitor Hub")
+    if name.startswith("Monitor Hub"):
+        return True
+    lower = name.lower()
+    if "schema monitor" in lower or lower.endswith(" r2 monitor"):
+        return True
+    return False
 
 
 def resolve_workflow_names(site: Dict) -> List[str]:
-    """Ordered scraper workflow display names for a site (from registry or site.yml)."""
-    raw = site.get("workflows")
+    """Ordered scraper workflow display names (same repo unless entry specifies repo)."""
+    return [e["name"] for e in parse_workflow_entries(site)]
+
+
+def parse_workflow_entries(site: Dict) -> List[Dict[str, str]]:
+    """
+    Normalize workflows config to [{name, owner, repo}, ...].
+
+    Supports:
+      workflows: ["Batch A", "Batch B-1"]
+      workflows:
+        - name: "CF Daily Scrapers - All Categories (Cloudflare R2)"
+          repo: Codinity
+    """
+    owner = (site.get("github_username") or site.get("github_owner") or "").strip()
+    default_repo = (site.get("repo") or "").strip()
+    raw: Union[str, List[Any], None] = site.get("workflows")
+
     if raw is None:
         single = site.get("workflow_name")
         if single and not is_monitor_workflow(str(single)):
-            return [str(single)]
+            if owner and default_repo:
+                return [{"name": str(single), "owner": owner, "repo": default_repo}]
         return []
 
+    items: List[Any]
     if isinstance(raw, str):
-        parts = [p.strip() for p in raw.replace("→", ",").split(",") if p.strip()]
-        return [p for p in parts if not is_monitor_workflow(p)]
+        items = [p.strip() for p in raw.replace("→", ",").split(",") if p.strip()]
+    elif isinstance(raw, list):
+        items = raw
+    else:
+        return []
 
-    if isinstance(raw, list):
-        return [str(w).strip() for w in raw if w and not is_monitor_workflow(str(w))]
-
-    return []
+    entries: List[Dict[str, str]] = []
+    for item in items:
+        if isinstance(item, str):
+            name = item.strip()
+            if not name or is_monitor_workflow(name):
+                continue
+            if not owner or not default_repo:
+                continue
+            entries.append({"name": name, "owner": owner, "repo": default_repo})
+        elif isinstance(item, dict):
+            name = (item.get("name") or item.get("workflow") or "").strip()
+            if not name or is_monitor_workflow(name):
+                continue
+            entry_owner = (item.get("owner") or item.get("github_username") or owner).strip()
+            entry_repo = (item.get("repo") or default_repo).strip()
+            if not entry_owner or not entry_repo:
+                continue
+            entries.append({"name": name, "owner": entry_owner, "repo": entry_repo})
+    return entries
 
 
 def format_workflow_label(names: List[str]) -> str:
@@ -95,6 +152,30 @@ def merge_registry_site(site: Dict, registry: Optional[Dict]) -> Dict:
     return merged
 
 
+def load_site_run_meta(monitor_dir: Optional[Path] = None) -> Dict:
+    """Load monitor/site.yml committed in each scraper repo."""
+    base = monitor_dir or Path(__file__).resolve().parent
+    path = base / "site.yml"
+    if not path.is_file():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        return data if isinstance(data, dict) else {}
+    except OSError as exc:
+        log.warning(f"Could not read {path}: {exc}")
+        return {}
+
+
+def _lookback_start(partition_date: str, schedule: Optional[str]) -> datetime:
+    sched = (schedule or "daily").lower().replace(" ", "_").replace("-", "_")
+    days = _SCHEDULE_LOOKBACK_DAYS.get(sched, 2)
+    try:
+        start = datetime.strptime(partition_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        start = datetime.now(timezone.utc)
+    return start - timedelta(days=days)
+
+
 def _github_request(url: str, token: str) -> Any:
     req = urllib.request.Request(
         url,
@@ -102,7 +183,7 @@ def _github_request(url: str, token: str) -> Any:
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "pro1-os-schema-monitor",
+            "User-Agent": "schema-monitor",
         },
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
@@ -147,7 +228,7 @@ def _latest_run_for_workflow(
 ) -> Optional[Dict]:
     url = (
         f"https://api.github.com/repos/{owner}/{repo}/actions/workflows/"
-        f"{workflow_id}/runs?per_page=15&exclude_pull_requests=true"
+        f"{workflow_id}/runs?per_page=20&exclude_pull_requests=true"
     )
     data = _github_request(url, token)
     for run in data.get("workflow_runs", []):
@@ -175,53 +256,51 @@ def fetch_pipeline_github_meta(
     partition_date: str,
     token: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    """
-    Fetch latest GitHub Actions runs for the site's configured scraper workflows.
-
-    partition_date: hub/report partition (YYYY-MM-DD), when Batch A typically starts.
-    """
-    workflow_names = resolve_workflow_names(site)
-    if not workflow_names:
+    """Fetch latest GitHub Actions runs for configured scraper workflows."""
+    entries = parse_workflow_entries(site)
+    if not entries:
         return None
 
-    owner = (site.get("github_username") or site.get("github_owner") or "").strip()
-    repo = (site.get("repo") or "").strip()
     token = (token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or "").strip()
-    if not owner or not repo:
-        log.info("Skipping GitHub workflow lookup — missing github_username or repo")
-        return None
     if not token:
         log.info("Skipping GitHub workflow lookup — no GITHUB_TOKEN")
         return None
 
-    try:
-        not_before = datetime.strptime(partition_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        not_before -= timedelta(hours=6)
-    except ValueError:
-        not_before = datetime.now(timezone.utc) - timedelta(days=1)
+    not_before = _lookback_start(partition_date, site.get("schedule"))
 
-    try:
-        name_to_id = _workflow_name_map(owner, repo, token)
-    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
-        log.warning(f"GitHub workflow list failed for {owner}/{repo}: {exc}")
-        return None
-
+    # Cache workflow id maps per repo
+    id_cache: Dict[str, Dict[str, int]] = {}
     runs_detail: List[Dict[str, Any]] = []
-    for wf_name in workflow_names:
-        wf_id = name_to_id.get(wf_name)
+
+    for entry in entries:
+        owner = entry["owner"]
+        repo = entry["repo"]
+        wf_name = entry["name"]
+        cache_key = f"{owner}/{repo}"
+
+        if cache_key not in id_cache:
+            try:
+                id_cache[cache_key] = _workflow_name_map(owner, repo, token)
+            except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
+                log.warning(f"GitHub workflow list failed for {cache_key}: {exc}")
+                id_cache[cache_key] = {}
+
+        wf_id = id_cache[cache_key].get(wf_name)
         if not wf_id:
-            log.warning(f"Workflow not found in {owner}/{repo}: {wf_name!r}")
+            log.warning(f"Workflow not found in {cache_key}: {wf_name!r}")
             continue
         try:
             run = _latest_run_for_workflow(owner, repo, wf_id, token, not_before)
         except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
-            log.warning(f"GitHub run lookup failed for {wf_name}: {exc}")
+            log.warning(f"GitHub run lookup failed for {cache_key} / {wf_name}: {exc}")
             continue
         if not run:
-            log.info(f"No recent GitHub run for {wf_name} since {not_before.isoformat()}")
+            log.info(f"No recent run for {cache_key} / {wf_name} since {not_before.isoformat()}")
             continue
         runs_detail.append({
             "name": wf_name,
+            "owner": owner,
+            "repo": repo,
             "run_id": run.get("id"),
             "run_number": run.get("run_number"),
             "conclusion": run.get("conclusion"),
@@ -235,20 +314,22 @@ def fetch_pipeline_github_meta(
     if not runs_detail:
         return None
 
+    configured_names = [e["name"] for e in entries]
     found_names = [r["name"] for r in runs_detail]
-    label_names = found_names if len(found_names) == len(workflow_names) else workflow_names
-    workflow_name = format_workflow_label(label_names)
+    label_names = found_names if len(found_names) == len(configured_names) else configured_names
     conclusions = [r.get("conclusion") for r in runs_detail]
     last_run = runs_detail[-1]
+    primary_owner = entries[0]["owner"]
+    primary_repo = entries[0]["repo"]
 
     return {
         "run_place": "github",
-        "workflow_name": workflow_name,
+        "workflow_name": format_workflow_label(label_names),
         "workflow_status": _pipeline_status(conclusions),
         "duration_sec": sum(r.get("duration_sec") or 0 for r in runs_detail),
         "workflow_run_id": str(last_run["run_id"]) if last_run.get("run_id") else None,
         "workflow_run_number": last_run.get("run_number"),
-        "github_repository": f"{owner}/{repo}",
+        "github_repository": f"{primary_owner}/{primary_repo}",
         "workflows": runs_detail,
         "source": "github_api",
     }

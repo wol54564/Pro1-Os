@@ -168,6 +168,8 @@ def summarize_site(
     if r2_file_count is None:
         r2_file_count = sum(s.get("r2_file_count") or 0 for s in results)
 
+    scrapers_failed = sum(1 for s in results if not s.get("all_passed"))
+
     return {
         **base,
         "display_name":    report.get("display_name") or site.get("display_name"),
@@ -179,9 +181,14 @@ def summarize_site(
         "status":          "ok" if passed == total and total > 0 else "failed",
         "scrapers_total":  total,
         "scrapers_passed": passed,
+        "scrapers_failed": scrapers_failed,
         "alert_count":     alerts,
         "unique_ads":      unique_ads,
         "r2_file_count":   r2_file_count,
+        "requests_total":  report.get("requests_total"),
+        "requests_failed": report.get("requests_failed"),
+        "error_rate_pct":  report.get("error_rate_pct"),
+        "requests_per_min": report.get("requests_per_min"),
         "report":          report,
     }
 
@@ -245,6 +252,23 @@ def main():
     total_alerts  = sum(s["alert_count"] for s in site_summaries)
     total_unique_ads = sum(s.get("unique_ads") or 0 for s in site_summaries)
     total_r2_files = sum(s.get("r2_file_count") or 0 for s in site_summaries)
+    total_requests = sum(s.get("requests_total") or 0 for s in site_summaries if s.get("requests_total"))
+    total_requests_failed = sum(
+        s.get("requests_failed") or 0 for s in site_summaries if s.get("requests_total")
+    )
+    rpm_values = [
+        float(s["requests_per_min"])
+        for s in site_summaries
+        if s.get("requests_per_min") is not None
+    ]
+    avg_requests_per_min = (
+        round(sum(rpm_values) / len(rpm_values), 2) if rpm_values else None
+    )
+    avg_error_rate_pct = (
+        round(total_requests_failed / total_requests * 100.0, 2)
+        if total_requests > 0
+        else None
+    )
 
     merged = {
         "run_date":      partition_date,
@@ -258,23 +282,39 @@ def main():
         "total_alerts":  total_alerts,
         "total_unique_ads": total_unique_ads,
         "total_r2_files": total_r2_files,
+        "total_requests": total_requests or None,
+        "total_requests_failed": total_requests_failed or None,
+        "avg_error_rate_pct": avg_error_rate_pct,
+        "avg_requests_per_min": avg_requests_per_min,
         "sites":         site_summaries,
     }
 
     key = upload_merged(client, bucket, partition_date, merged, root)
 
-    print(f"\n{'SITE':<22} {'STATUS':<10} {'SCRAPERS':<12} {'ADS':<10} {'R2 FILES':<12} ALERTS")
-    print("-" * 78)
+    print(f"\n{'SITE':<22} {'STATUS':<10} {'SCRAPERS':<12} {'REQ/MIN':<10} {'ERR%':<8} {'ADS':<10} ALERTS")
+    print("-" * 88)
     for s in site_summaries:
         sc = f"{s['scrapers_passed']}/{s['scrapers_total']}"
         ads = s.get("unique_ads", 0)
-        r2_files = s.get("r2_file_count", 0)
-        print(f"{s['display_name']:<22} {s['status']:<10} {sc:<12} {ads:<10} {r2_files:<12} {s['alert_count']}")
-    print("-" * 78)
+        rpm = s.get("requests_per_min")
+        rpm_str = f"{rpm:.1f}" if rpm is not None else "—"
+        err = s.get("error_rate_pct")
+        err_str = f"{err:.1f}%" if err is not None else "—"
+        print(
+            f"{s['display_name']:<22} {s['status']:<10} {sc:<12} {rpm_str:<10} "
+            f"{err_str:<8} {ads:<10} {s['alert_count']}"
+        )
+    print("-" * 88)
     print(
         f"Hub summary: {sites_ok}/{len(sites)} sites OK · "
         f"{total_unique_ads} unique ads · {total_r2_files} R2 files · {total_alerts} total alerts"
     )
+    if avg_requests_per_min is not None:
+        print(
+            f"Throughput: {avg_requests_per_min} avg req/min · "
+            f"HTTP error rate {avg_error_rate_pct or 0}% · "
+            f"{total_requests_failed}/{total_requests} failed requests"
+        )
     print(f"Merged → r2://{bucket}/{key}\n")
 
 

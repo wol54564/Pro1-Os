@@ -56,6 +56,11 @@ import pandas as pd
 import yaml
 
 from ads_counter import count_scraper_ads
+from request_metrics import (
+    aggregate_site_request_metrics,
+    build_run_error_summary,
+    count_scraper_request_metrics,
+)
 from r2_file_counter import count_scraper_r2_files, count_site_r2_files
 from github_workflows import build_scraper_run_meta, merge_registry_site
 from monitor_r2 import (
@@ -1080,45 +1085,106 @@ def print_failure_summary(results: List[Dict]) -> None:
     print("-" * 70 + "\n")
 
 
-def print_summary_table(results: List[Dict]) -> None:
+def _apply_request_metrics(scraper_result: Dict, metrics: Dict) -> None:
+    scraper_result["requests_total"] = metrics.get("requests_total")
+    scraper_result["requests_failed"] = metrics.get("requests_failed")
+    scraper_result["error_rate_pct"] = metrics.get("error_rate_pct")
+    scraper_result["requests_per_min"] = metrics.get("requests_per_min")
+    scraper_result["duration_sec"] = metrics.get("duration_sec")
+    scraper_result["metrics_source"] = metrics.get("metrics_source", "none")
+    if metrics.get("failed_items"):
+        scraper_result["failed_items"] = metrics["failed_items"]
+    if metrics.get("failed_items_summary"):
+        scraper_result["failed_items_summary"] = metrics["failed_items_summary"]
+    if metrics.get("json_summary_key"):
+        scraper_result["metrics_json_key"] = metrics["json_summary_key"]
+
+
+def _fmt_pct(value: Optional[float]) -> str:
+    if value is None:
+        return "—"
+    return f"{value:.1f}%"
+
+
+def _fmt_rpm(value: Optional[float]) -> str:
+    if value is None:
+        return "—"
+    return f"{value:.1f}"
+
+
+def print_summary_table(results: List[Dict], error_summary: Optional[Dict] = None) -> None:
     """Print a human-readable table to stdout."""
-    print("\n" + "=" * 82)
-    print(f"{'SCRAPER':<28}  {'FILES':<6}  {'R2':<8}  {'CHECKS':<10}  {'ADS':<8}  STATUS")
-    print("=" * 92)
+    print("\n" + "=" * 112)
+    print(
+        f"{'SCRAPER':<24}  {'FILES':<5}  {'CHECKS':<9}  {'ADS':<7}  "
+        f"{'REQ/MIN':<8}  {'ERR%':<7}  {'HTTP ERR':<8}  STATUS"
+    )
+    print("=" * 112)
     for r in results:
         status  = PASS if r["all_passed"] else FAIL
         missing = MISS if r["files_found"] == 0 and not r.get("files_optional") else ""
         optional = " (optional)" if r.get("files_optional") and r["files_found"] == 0 else ""
         ads = r.get("unique_ads", 0)
-        r2_total = r.get("r2_file_count", 0)
         print(
-            f"{r['scraper']:<28}  "
-            f"{r['files_found']:<6}  "
-            f"{r2_total:<8}  "
+            f"{r['scraper']:<24}  "
+            f"{r['files_found']:<5}  "
             f"{r['checks_passed']}/{r['checks_total']:<7}  "
-            f"{ads:<8}  "
+            f"{ads:<7}  "
+            f"{_fmt_rpm(r.get('requests_per_min')):<8}  "
+            f"{_fmt_pct(r.get('error_rate_pct')):<7}  "
+            f"{r.get('requests_failed') or '—':<8}  "
             f"{status}{optional} {missing}"
         )
-    print("=" * 92)
+    print("=" * 112)
     total_pass = sum(1 for r in results if r["all_passed"])
     total_ads = sum(r.get("unique_ads") or 0 for r in results)
     total_r2 = sum(r.get("r2_file_count") or 0 for r in results)
+    site_metrics = aggregate_site_request_metrics(results)
     print(
         f"\nTotal: {total_pass}/{len(results)} scrapers fully passed · "
-        f"{total_ads} unique ads · {total_r2} R2 objects (scrapers sum)\n"
+        f"{total_ads} unique ads · {total_r2} R2 objects"
     )
+    if site_metrics.get("requests_total"):
+        print(
+            f"HTTP: {site_metrics['requests_total']} requests · "
+            f"{site_metrics.get('requests_failed') or 0} failed · "
+            f"error rate {_fmt_pct(site_metrics.get('error_rate_pct'))} · "
+            f"{_fmt_rpm(site_metrics.get('requests_per_min'))} req/min"
+        )
+    if error_summary and error_summary.get("failed_scrapers"):
+        print(f"\nFailed scrapers ({len(error_summary['failed_scrapers'])}):")
+        for item in error_summary["failed_scrapers"][:15]:
+            print(f"  • {item.get('scraper')}: {item.get('reason')}")
+        if len(error_summary["failed_scrapers"]) > 15:
+            print(f"  … +{len(error_summary['failed_scrapers']) - 15} more")
+    print()
 
 
-def write_github_summary(results: List[Dict], listing_date: str, report_date: str) -> None:
+def write_github_summary(
+    results: List[Dict],
+    listing_date: str,
+    report_date: str,
+    error_summary: Optional[Dict] = None,
+) -> None:
     """Write markdown to $GITHUB_STEP_SUMMARY if available."""
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if not summary_path:
         return
+    site_metrics = aggregate_site_request_metrics(results)
     lines = [
         f"## R2 Schema Monitor — listings {listing_date} (saved under {report_date})\n",
-        "| Scraper | Files | Checks | Status |",
-        "|---------|-------|--------|--------|",
     ]
+    if site_metrics.get("requests_total"):
+        lines.append(
+            f"**Throughput:** {_fmt_rpm(site_metrics.get('requests_per_min'))} req/min · "
+            f"**HTTP error rate:** {_fmt_pct(site_metrics.get('error_rate_pct'))} · "
+            f"**Failed requests:** {site_metrics.get('requests_failed') or 0} / "
+            f"{site_metrics.get('requests_total')}\n"
+        )
+    lines.extend([
+        "| Scraper | Files | Checks | Req/min | Err% | Status |",
+        "|---------|-------|--------|---------|------|--------|",
+    ])
     for r in results:
         icon   = PASS if r["all_passed"] else (MISS if r["files_found"] == 0 else FAIL)
         detail = ""
@@ -1140,12 +1206,20 @@ def write_github_summary(results: List[Dict], listing_date: str, report_date: st
                 detail = "<br>".join(failed_bits[:8]) if failed_bits else "validation failed"
                 if len(failed_bits) > 8:
                     detail += f"<br>… +{len(failed_bits) - 8} more"
+            if r.get("failed_items_summary"):
+                detail += f"<br>HTTP: {r['failed_items_summary']}"
         lines.append(
             f"| {r['scraper']} | {r['files_found']} | "
-            f"{r['checks_passed']}/{r['checks_total']} | {icon} {detail} |"
+            f"{r['checks_passed']}/{r['checks_total']} | "
+            f"{_fmt_rpm(r.get('requests_per_min'))} | "
+            f"{_fmt_pct(r.get('error_rate_pct'))} | {icon} {detail} |"
         )
     total_pass = sum(1 for r in results if r["all_passed"])
     lines.append(f"\n**{total_pass}/{len(results)} scrapers fully passed**")
+    if error_summary and error_summary.get("failed_scrapers"):
+        lines.append(f"\n**Failed scrapers:** {len(error_summary['failed_scrapers'])}")
+        for item in error_summary["failed_scrapers"][:10]:
+            lines.append(f"- **{item.get('scraper')}** — {item.get('reason')}")
     with open(summary_path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines))
 
@@ -1363,6 +1437,10 @@ def main():
             scraper_result["ads_source"] = ads_stats.get("ads_source", "none")
             if ads_stats.get("json_summary_key"):
                 scraper_result["json_summary_key"] = ads_stats["json_summary_key"]
+            req_stats = count_scraper_request_metrics(
+                r2_client, bucket, r2_base, partition_dt
+            )
+            _apply_request_metrics(scraper_result, req_stats)
             all_results.append(scraper_result)
             full_report["scrapers"][scraper_name] = scraper_result
             continue
@@ -1430,15 +1508,27 @@ def main():
         if ads_stats.get("json_summary_key"):
             scraper_result["json_summary_key"] = ads_stats["json_summary_key"]
 
+        req_stats = count_scraper_request_metrics(
+            r2_client, bucket, r2_base, partition_dt
+        )
+        _apply_request_metrics(scraper_result, req_stats)
+
         all_results.append(scraper_result)
         full_report["scrapers"][scraper_name] = scraper_result
         status = PASS if scraper_result["all_passed"] else FAIL
+        metrics_note = ""
+        if scraper_result.get("requests_per_min") is not None:
+            metrics_note = (
+                f", {_fmt_rpm(scraper_result['requests_per_min'])} req/min, "
+                f"err {_fmt_pct(scraper_result.get('error_rate_pct'))}"
+            )
         log.info(
             f"  {status} {scraper_name}: "
             f"{scraper_result['files_found']} file(s) today, "
             f"{scraper_result['r2_file_count']} R2 object(s) total, "
             f"{scraper_result['checks_passed']}/{scraper_result['checks_total']} checks, "
             f"{scraper_result['unique_ads']} unique ads ({scraper_result['ads_source']})"
+            f"{metrics_note}"
         )
         if not scraper_result["all_passed"]:
             log_scraper_failures(
@@ -1460,15 +1550,21 @@ def main():
     alerts = collect_alerts(all_results, listing_date_str)
     full_report["alerts"] = alerts
     full_report["alert_count"] = len(alerts)
+
+    site_request_metrics = aggregate_site_request_metrics(all_results)
+    full_report.update(site_request_metrics)
+    error_summary = build_run_error_summary(all_results, alerts)
+    full_report["error_summary"] = error_summary
+
     validation_passed = all(r["all_passed"] for r in all_results) and bool(all_results)
     full_report["github_run"] = build_scraper_run_meta(
         site, report_date_str, run_started_at, validation_passed
     )
     full_report["run_place"] = full_report["github_run"].get("run_place")
 
-    print_summary_table(all_results)
+    print_summary_table(all_results, error_summary)
     print_failure_summary(all_results)
-    write_github_summary(all_results, listing_date_str, report_date_str)
+    write_github_summary(all_results, listing_date_str, report_date_str, error_summary)
     write_github_alert_summary(alerts, listing_date_str)
     upload_report(r2_client, bucket, full_report, report_date_str, site)
 

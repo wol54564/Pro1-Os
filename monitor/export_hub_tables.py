@@ -70,6 +70,10 @@ HUB_DAILY_COLS = [
     "total_alerts",
     "total_unique_ads",
     "total_r2_files",
+    "total_requests",
+    "total_requests_failed",
+    "avg_error_rate_pct",
+    "avg_requests_per_min",
     "hub_prefix",
 ]
 
@@ -95,6 +99,11 @@ SITE_DAILY_COLS = [
     "alert_count",
     "unique_ads",
     "r2_file_count",
+    "requests_total",
+    "requests_failed",
+    "error_rate_pct",
+    "requests_per_min",
+    "scrapers_failed",
     "run_date",
     "inspect_date",
     "report_fallback",
@@ -113,6 +122,13 @@ SCRAPER_DAILY_COLS = [
     "total_rows",
     "ads_source",
     "r2_file_count",
+    "requests_total",
+    "requests_failed",
+    "error_rate_pct",
+    "requests_per_min",
+    "duration_sec",
+    "metrics_source",
+    "failed_items_summary",
 ]
 
 ALERTS_COLS = [
@@ -240,6 +256,95 @@ def _resolve_workflow_meta(
     }
 
 
+def _site_request_fields(report: Dict, site: Dict) -> Dict[str, Any]:
+    """Extract rolled-up request/error metrics from a site report."""
+    results = _scraper_entries(report)
+    scrapers_failed = sum(1 for _, sr in results if not sr.get("all_passed"))
+
+    requests_total = report.get("requests_total")
+    requests_failed = report.get("requests_failed")
+    error_rate_pct = report.get("error_rate_pct")
+    requests_per_min = report.get("requests_per_min")
+
+    if requests_total is None and results:
+        total = 0
+        failed = 0
+        rpm_values = []
+        found = False
+        for _, sr in results:
+            rt = sr.get("requests_total")
+            if rt is None:
+                continue
+            found = True
+            total += int(rt)
+            failed += int(sr.get("requests_failed") or 0)
+            rpm = sr.get("requests_per_min")
+            if rpm is not None:
+                rpm_values.append(float(rpm))
+        if found:
+            requests_total = total
+            requests_failed = failed
+            if total > 0:
+                error_rate_pct = round(failed / total * 100.0, 2)
+            if rpm_values:
+                requests_per_min = round(sum(rpm_values) / len(rpm_values), 2)
+
+    return {
+        "requests_total": requests_total,
+        "requests_failed": requests_failed,
+        "error_rate_pct": error_rate_pct,
+        "requests_per_min": requests_per_min,
+        "scrapers_failed": scrapers_failed,
+    }
+
+
+def _hub_request_totals(site_rows: List[Dict]) -> Dict[str, Any]:
+    total_requests = 0
+    total_failed = 0
+    rpm_values = []
+    err_values = []
+    has_requests = False
+
+    for row in site_rows:
+        rt = row.get("requests_total")
+        if rt is None:
+            continue
+        has_requests = True
+        total_requests += int(rt)
+        total_failed += int(row.get("requests_failed") or 0)
+        rpm = row.get("requests_per_min")
+        if rpm is not None:
+            rpm_values.append(float(rpm))
+        err = row.get("error_rate_pct")
+        if err is not None:
+            err_values.append(float(err))
+
+    if not has_requests:
+        return {
+            "total_requests": None,
+            "total_requests_failed": None,
+            "avg_error_rate_pct": None,
+            "avg_requests_per_min": None,
+        }
+
+    avg_error_rate_pct = None
+    if total_requests > 0:
+        avg_error_rate_pct = round(total_failed / total_requests * 100.0, 2)
+    elif err_values:
+        avg_error_rate_pct = round(sum(err_values) / len(err_values), 2)
+
+    avg_requests_per_min = None
+    if rpm_values:
+        avg_requests_per_min = round(sum(rpm_values) / len(rpm_values), 2)
+
+    return {
+        "total_requests": total_requests,
+        "total_requests_failed": total_failed,
+        "avg_error_rate_pct": avg_error_rate_pct,
+        "avg_requests_per_min": avg_requests_per_min,
+    }
+
+
 def flatten_hub(
     merged: Dict,
     registry: Optional[Dict] = None,
@@ -316,6 +421,7 @@ def flatten_hub(
             "alert_count": site.get("alert_count"),
             "unique_ads": site.get("unique_ads"),
             "r2_file_count": site.get("r2_file_count"),
+            **_site_request_fields(report, site),
             "run_date": site.get("run_date"),
             "inspect_date": site.get("inspect_date"),
             "report_fallback": bool(site.get("report_fallback", False)),
@@ -334,6 +440,13 @@ def flatten_hub(
                 "total_rows": sr.get("total_rows"),
                 "ads_source": sr.get("ads_source"),
                 "r2_file_count": sr.get("r2_file_count"),
+                "requests_total": sr.get("requests_total"),
+                "requests_failed": sr.get("requests_failed"),
+                "error_rate_pct": sr.get("error_rate_pct"),
+                "requests_per_min": sr.get("requests_per_min"),
+                "duration_sec": sr.get("duration_sec"),
+                "metrics_source": sr.get("metrics_source"),
+                "failed_items_summary": sr.get("failed_items_summary"),
             })
 
         alerts = report.get("alerts") or []
@@ -350,6 +463,8 @@ def flatten_hub(
                 "file_key": alert.get("file"),
                 "alert_id": f"{hub_partition}:{site_id}:{scraper}:{i}",
             })
+
+    hub_row.update(_hub_request_totals(site_rows))
 
     return hub_row, site_rows, scraper_rows, alert_rows
 

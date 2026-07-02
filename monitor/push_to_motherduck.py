@@ -213,6 +213,20 @@ def ensure_schema(con: duckdb.DuckDBPyConnection) -> None:
         con.execute(stmt)
     log.info("MotherDuck schema ready (hub_daily, site_daily, scraper_daily, alerts)")
 
+    try:
+        db_name = con.execute("SELECT current_database()").fetchone()[0]
+        log.info(f"MotherDuck current_database(): {db_name}")
+    except Exception as exc:
+        log.warning(f"Could not read current_database(): {exc}")
+
+    try:
+        cols = con.execute("PRAGMA table_info('site_daily')").fetchall()
+        colnames = [r[1] for r in cols]  # (cid, name, type, notnull, dflt_value, pk)
+        log.info(f"site_daily columns ({len(colnames)}): {', '.join(colnames)}")
+        log.info(f"site_daily has uses_proxy: {'uses_proxy' in set(colnames)}")
+    except Exception as exc:
+        log.warning(f"Could not read site_daily columns: {exc}")
+
 
 def _align_df(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
     out = df.copy()

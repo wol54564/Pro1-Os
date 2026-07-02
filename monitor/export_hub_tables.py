@@ -185,8 +185,16 @@ def _duration_from_github_run(github_run: Dict) -> Optional[int]:
         except (TypeError, ValueError):
             pass
 
-    # Check monitor_run timestamps if present
     mr = github_run.get("monitor_run") or {}
+    if isinstance(mr, dict):
+        monitor_duration = mr.get("duration_sec")
+        if monitor_duration is not None:
+            try:
+                return int(monitor_duration)
+            except (TypeError, ValueError):
+                pass
+
+    # Check monitor_run timestamps if present
     started = mr.get("started_at") or github_run.get("started_at")
     finished = mr.get("finished_at") or github_run.get("finished_at")
     if started and finished:
@@ -298,7 +306,17 @@ def _resolve_workflow_meta(
         workflow_status = None
 
     if workflow_status is None:
-        workflow_status = _status_to_workflow_status(site_status)
+        conclusions = [w.get("conclusion") for w in github_run.get("workflows", []) if isinstance(w, dict)]
+        if conclusions:
+            workflow_status = "success"
+            for conclusion in conclusions:
+                if conclusion in (None, "cancelled", "skipped"):
+                    continue
+                if conclusion not in ("success", "skipped"):
+                    workflow_status = "failure"
+                    break
+        if workflow_status is None:
+            workflow_status = _status_to_workflow_status(site_status)
 
     duration = _duration_from_github_run(github_run)
     if is_monitor_workflow(stored_name):

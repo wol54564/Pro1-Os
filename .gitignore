@@ -42,3 +42,5 @@ dashboard/basex
 dashboard/basex/*
 monitor/R2_FILES_COUNTING_PROMPT.md
 monitor/REQUEST_METRICS_PROMPT.md
+sites/*
+test_github_workflow_metadata.py

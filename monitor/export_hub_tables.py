@@ -192,6 +192,31 @@ def _duration_from_github_run(github_run: Dict) -> Optional[int]:
         return None
 
 
+def _is_missing_workflow_name(value: Optional[str]) -> bool:
+    if value is None:
+        return True
+    if not isinstance(value, str):
+        return False
+    stripped = value.strip()
+    return not stripped or stripped in {"—", "-", "None", "null", "N/A", "n/a"}
+
+
+def _site_registry_row(reg: Optional[Dict], report: Dict) -> Dict:
+    if not reg:
+        return {}
+    if isinstance(reg.get("sites"), list):
+        folder = (report.get("folder") or "").strip()
+        site_id = (report.get("site_id") or "").strip()
+        for row in reg["sites"]:
+            if isinstance(row, dict):
+                if folder and (row.get("folder") or "").strip() == folder:
+                    return row
+                if site_id and (row.get("site_id") or "").strip() == site_id:
+                    return row
+        return {}
+    return reg
+
+
 def _resolve_workflow_meta(
     report: Dict,
     reg: Dict,
@@ -206,13 +231,14 @@ def _resolve_workflow_meta(
     """
     github_run = report.get("github_run") or {}
     stored_name = github_run.get("workflow_name")
+    site_reg = _site_registry_row(reg, report)
 
     workflow_name = None
-    if stored_name and not is_monitor_workflow(stored_name):
+    if not _is_missing_workflow_name(stored_name) and not is_monitor_workflow(stored_name):
         workflow_name = stored_name
 
     if not workflow_name:
-        configured = resolve_workflow_names(reg) or resolve_workflow_names(report)
+        configured = resolve_workflow_names(site_reg) or resolve_workflow_names(reg) or resolve_workflow_names(report)
         workflow_name = format_workflow_label(configured) if configured else None
 
     if not workflow_name and github_run.get("workflows"):
@@ -224,7 +250,7 @@ def _resolve_workflow_meta(
         workflow_name = format_workflow_label(api_names) if api_names else None
 
     if not workflow_name:
-        legacy = reg.get("workflow_name") or report.get("workflow_name")
+        legacy = site_reg.get("workflow_name") or reg.get("workflow_name") or report.get("workflow_name")
         if legacy and not is_monitor_workflow(str(legacy)):
             workflow_name = str(legacy)
 

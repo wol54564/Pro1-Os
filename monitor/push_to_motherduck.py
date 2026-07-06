@@ -37,6 +37,7 @@ import pandas as pd
 from export_hub_tables import (
     ALERTS_COLS,
     HUB_DAILY_COLS,
+    SCRAPER_SUBCATEGORY_DAILY_COLS,
     SCRAPER_DAILY_COLS,
     SITE_DAILY_COLS,
 )
@@ -61,6 +62,7 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
     "hub_daily": HUB_DAILY_COLS,
     "site_daily": SITE_DAILY_COLS,
     "scraper_daily": SCRAPER_DAILY_COLS,
+    "scraper_subcategory_daily": SCRAPER_SUBCATEGORY_DAILY_COLS,
     "alerts": ALERTS_COLS,
 }
 
@@ -158,6 +160,20 @@ SCHEMA_STATEMENTS = [
       PRIMARY KEY (alert_id)
     )
     """,
+        """
+        CREATE TABLE IF NOT EXISTS scraper_subcategory_daily (
+            hub_partition_date   DATE NOT NULL,
+            site_id              VARCHAR NOT NULL,
+            scraper              VARCHAR NOT NULL,
+            subcategory          VARCHAR NOT NULL,
+            level_3              VARCHAR NOT NULL DEFAULT '',
+            ads_count            INTEGER,
+            sheet_rows           INTEGER,
+            sheets_count         INTEGER,
+            source               VARCHAR,
+            PRIMARY KEY (hub_partition_date, site_id, scraper, subcategory, level_3)
+        )
+        """,
 ]
 
 MIGRATION_STATEMENTS = [
@@ -192,6 +208,10 @@ MIGRATION_STATEMENTS = [
     "ALTER TABLE scraper_daily ADD COLUMN IF NOT EXISTS metrics_source VARCHAR",
     "ALTER TABLE scraper_daily ADD COLUMN IF NOT EXISTS failed_items_summary VARCHAR",
     "ALTER TABLE site_daily ADD COLUMN IF NOT EXISTS uses_proxy BOOLEAN",
+    "ALTER TABLE scraper_subcategory_daily ADD COLUMN IF NOT EXISTS ads_count INTEGER",
+    "ALTER TABLE scraper_subcategory_daily ADD COLUMN IF NOT EXISTS sheet_rows INTEGER",
+    "ALTER TABLE scraper_subcategory_daily ADD COLUMN IF NOT EXISTS sheets_count INTEGER",
+    "ALTER TABLE scraper_subcategory_daily ADD COLUMN IF NOT EXISTS source VARCHAR",
 ]
 
 
@@ -211,7 +231,7 @@ def ensure_schema(con: duckdb.DuckDBPyConnection) -> None:
         con.execute(stmt)
     for stmt in MIGRATION_STATEMENTS:
         con.execute(stmt)
-    log.info("MotherDuck schema ready (hub_daily, site_daily, scraper_daily, alerts)")
+    log.info("MotherDuck schema ready (hub_daily, site_daily, scraper_daily, scraper_subcategory_daily, alerts)")
 
     try:
         db_name = con.execute("SELECT current_database()").fetchone()[0]

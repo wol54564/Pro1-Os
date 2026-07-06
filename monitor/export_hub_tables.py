@@ -132,6 +132,18 @@ SCRAPER_DAILY_COLS = [
     "failed_items_summary",
 ]
 
+SCRAPER_SUBCATEGORY_DAILY_COLS = [
+    "hub_partition_date",
+    "site_id",
+    "scraper",
+    "subcategory",
+    "level_3",
+    "ads_count",
+    "sheet_rows",
+    "sheets_count",
+    "source",
+]
+
 ALERTS_COLS = [
     "hub_partition_date",
     "site_id",
@@ -143,6 +155,8 @@ ALERTS_COLS = [
     "file_key",
     "alert_id",
 ]
+
+SKIP_SUBCATEGORY_SHEETS = frozenset({"info", "no data"})
 
 
 def _scraper_entries(report: Dict) -> List[Tuple[str, Dict]]:
@@ -438,11 +452,11 @@ def _resolve_uses_proxy(site: Dict, reg: Dict, report: Dict) -> Optional[bool]:
 def flatten_hub(
     merged: Dict,
     registry: Optional[Dict] = None,
-) -> Tuple[Dict, List[Dict], List[Dict], List[Dict]]:
+) -> Tuple[Dict, List[Dict], List[Dict], List[Dict], List[Dict]]:
     """
     Flatten all-sites.json into hub_daily, site_daily, scraper_daily, alerts rows.
 
-    Returns (hub_row, site_rows, scraper_rows, alert_rows).
+    Returns (hub_row, site_rows, scraper_rows, subcategory_rows, alert_rows).
     """
     hub_partition = merged.get("run_date")
     if not hub_partition:
@@ -465,6 +479,7 @@ def flatten_hub(
     reg_lookup = _registry_lookup(registry)
     site_rows: List[Dict] = []
     scraper_rows: List[Dict] = []
+    subcategory_rows: List[Dict] = []
     alert_rows: List[Dict] = []
 
     for site in merged.get("sites", []):
@@ -540,6 +555,52 @@ def flatten_hub(
                 "failed_items_summary": sr.get("failed_items_summary"),
             })
 
+            subcat_agg: Dict[Tuple[str, str], Dict[str, int]] = {}
+            for file_result in sr.get("file_results") or []:
+                for sheet in file_result.get("sheets") or []:
+                    raw_name = str(sheet.get("name") or "").strip()
+                    if not raw_name:
+                        continue
+                    if raw_name.lower() in SKIP_SUBCATEGORY_SHEETS:
+                        continue
+
+                    sheet_rows = int(sheet.get("row_count") or 0)
+                    if sheet_rows < 0:
+                        sheet_rows = 0
+
+                    normalized = (
+                        raw_name.replace(" > ", "/")
+                        .replace("::", "/")
+                        .replace(" - ", "/")
+                    )
+                    parts = [p.strip() for p in normalized.split("/") if p.strip()]
+                    subcategory = parts[0] if parts else raw_name
+                    level_3 = parts[1] if len(parts) > 1 else ""
+                    agg_key = (subcategory, level_3)
+
+                    bucket = subcat_agg.setdefault(
+                        agg_key,
+                        {
+                            "sheet_rows": 0,
+                            "sheets_count": 0,
+                        },
+                    )
+                    bucket["sheet_rows"] += sheet_rows
+                    bucket["sheets_count"] += 1
+
+            for (subcategory, level_3), stats in subcat_agg.items():
+                subcategory_rows.append({
+                    "hub_partition_date": hub_partition,
+                    "site_id": site_id,
+                    "scraper": sr.get("scraper") or scraper_name,
+                    "subcategory": subcategory,
+                    "level_3": level_3,
+                    "ads_count": stats["sheet_rows"],
+                    "sheet_rows": stats["sheet_rows"],
+                    "sheets_count": stats["sheets_count"],
+                    "source": "sheet_rows",
+                })
+
         alerts = report.get("alerts") or []
         for i, alert in enumerate(alerts):
             scraper = alert.get("scraper") or ""
@@ -557,7 +618,7 @@ def flatten_hub(
 
     hub_row.update(_hub_request_totals(site_rows))
 
-    return hub_row, site_rows, scraper_rows, alert_rows
+    return hub_row, site_rows, scraper_rows, subcategory_rows, alert_rows
 
 
 def _empty_df(columns: List[str]) -> pd.DataFrame:
@@ -568,12 +629,18 @@ def _to_dataframes(
     hub_row: Dict,
     site_rows: List[Dict],
     scraper_rows: List[Dict],
+    subcategory_rows: List[Dict],
     alert_rows: List[Dict],
 ) -> Dict[str, pd.DataFrame]:
     return {
         "hub_daily": pd.DataFrame([hub_row]) if hub_row else _empty_df(HUB_DAILY_COLS),
         "site_daily": pd.DataFrame(site_rows) if site_rows else _empty_df(SITE_DAILY_COLS),
         "scraper_daily": pd.DataFrame(scraper_rows) if scraper_rows else _empty_df(SCRAPER_DAILY_COLS),
+        "scraper_subcategory_daily": (
+            pd.DataFrame(subcategory_rows)
+            if subcategory_rows
+            else _empty_df(SCRAPER_SUBCATEGORY_DAILY_COLS)
+        ),
         "alerts": pd.DataFrame(alert_rows) if alert_rows else _empty_df(ALERTS_COLS),
     }
 
@@ -646,12 +713,13 @@ def export_partition(
             f"JSON run_date={merged.get('run_date')} differs from target partition {partition_date}"
         )
 
-    hub_row, site_rows, scraper_rows, alert_rows = flatten_hub(merged, registry)
-    tables = _to_dataframes(hub_row, site_rows, scraper_rows, alert_rows)
+    hub_row, site_rows, scraper_rows, subcategory_rows, alert_rows = flatten_hub(merged, registry)
+    tables = _to_dataframes(hub_row, site_rows, scraper_rows, subcategory_rows, alert_rows)
 
     log.info(
         f"Partition {partition_date}: "
-        f"1 hub · {len(site_rows)} sites · {len(scraper_rows)} scrapers · {len(alert_rows)} alerts"
+        f"1 hub · {len(site_rows)} sites · {len(scraper_rows)} scrapers · "
+        f"{len(subcategory_rows)} subcategories · {len(alert_rows)} alerts"
     )
 
     if output_dir is not None:

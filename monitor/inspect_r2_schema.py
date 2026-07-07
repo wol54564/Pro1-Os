@@ -1382,6 +1382,7 @@ def main():
             "all_passed":     True,
             "file_results":   [],
             "unique_ads":     0,
+            "unique_phones":  0,
             "total_rows":     0,
             "ads_source":     "none",
         }
@@ -1433,6 +1434,7 @@ def main():
                 r2_client, bucket, r2_base, partition_dt, []
             )
             scraper_result["unique_ads"] = ads_stats.get("unique_ads") or 0
+            scraper_result["unique_phones"] = ads_stats.get("unique_phones") or 0
             scraper_result["total_rows"] = ads_stats.get("total_rows") or 0
             scraper_result["ads_source"] = ads_stats.get("ads_source", "none")
             if ads_stats.get("json_summary_key"):
@@ -1503,6 +1505,7 @@ def main():
             r2_client, bucket, r2_base, partition_dt, excel_downloads
         )
         scraper_result["unique_ads"] = ads_stats.get("unique_ads") or 0
+        scraper_result["unique_phones"] = ads_stats.get("unique_phones") or 0
         scraper_result["total_rows"] = ads_stats.get("total_rows") or 0
         scraper_result["ads_source"] = ads_stats.get("ads_source", "none")
         if ads_stats.get("json_summary_key"):
@@ -1540,6 +1543,7 @@ def main():
     # ── Outputs ───────────────────────────────────────────────────────────────
     total_unique_ads = sum(r.get("unique_ads") or 0 for r in all_results)
     full_report["total_unique_ads"] = total_unique_ads
+    full_report["total_unique_phones"] = sum(r.get("unique_phones") or 0 for r in all_results)
 
     site_r2_prefix = site.get("r2_prefix", "").strip("/")
     if site_r2_prefix:

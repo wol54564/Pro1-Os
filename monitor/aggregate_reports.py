@@ -155,6 +155,7 @@ def summarize_site(
             "scrapers_passed": 0,
             "alert_count": 0,
             "unique_ads": 0,
+            "unique_phones": 0,
             "r2_file_count": 0,
         }
 
@@ -165,6 +166,9 @@ def summarize_site(
     unique_ads = report.get("total_unique_ads")
     if unique_ads is None:
         unique_ads = sum(s.get("unique_ads") or 0 for s in results)
+    unique_phones = report.get("total_unique_phones")
+    if unique_phones is None:
+        unique_phones = sum(s.get("unique_phones") or 0 for s in results)
     r2_file_count = report.get("total_r2_files")
     if r2_file_count is None:
         r2_file_count = sum(s.get("r2_file_count") or 0 for s in results)
@@ -185,6 +189,7 @@ def summarize_site(
         "scrapers_failed": scrapers_failed,
         "alert_count":     alerts,
         "unique_ads":      unique_ads,
+        "unique_phones":   unique_phones,
         "r2_file_count":   r2_file_count,
         "requests_total":  report.get("requests_total"),
         "requests_failed": report.get("requests_failed"),
@@ -252,6 +257,7 @@ def main():
     sites_failed  = sum(1 for s in site_summaries if s["status"] == "failed")
     total_alerts  = sum(s["alert_count"] for s in site_summaries)
     total_unique_ads = sum(s.get("unique_ads") or 0 for s in site_summaries)
+    total_unique_phones = sum(s.get("unique_phones") or 0 for s in site_summaries)
     total_r2_files = sum(s.get("r2_file_count") or 0 for s in site_summaries)
     total_requests = sum(s.get("requests_total") or 0 for s in site_summaries if s.get("requests_total"))
     total_requests_failed = sum(
@@ -282,6 +288,7 @@ def main():
         "sites_missing": sites_missing,
         "total_alerts":  total_alerts,
         "total_unique_ads": total_unique_ads,
+        "total_unique_phones": total_unique_phones,
         "total_r2_files": total_r2_files,
         "total_requests": total_requests or None,
         "total_requests_failed": total_requests_failed or None,

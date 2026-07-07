@@ -31,6 +31,11 @@ ID_COLUMN_NAMES = frozenset({
     "ad_id",
     "ad id",
 })
+PHONE_COLUMN_NAMES = frozenset({
+    "phone",
+    "phone number",
+    "phonenumber",
+})
 TOTAL_LISTINGS_KEYS = (
     "total_listings",
     "total_ads",
@@ -55,6 +60,23 @@ def _find_id_column(columns) -> Optional[str]:
         if str(col).strip().lower() in ID_COLUMN_NAMES:
             return col
     return None
+
+
+def _find_phone_column(columns) -> Optional[str]:
+    for col in columns:
+        if str(col).strip().lower() in PHONE_COLUMN_NAMES:
+            return col
+    return None
+
+
+def _normalize_phone(value: Any) -> Optional[str]:
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none"}:
+        return None
+
+    # Keep digits only so formatting variants count as the same phone.
+    digits = "".join(ch for ch in text if ch.isdigit())
+    return digits or None
 
 
 def count_ads_from_excel_bytes(raw: bytes) -> Tuple[Optional[int], int, bool]:
@@ -101,6 +123,7 @@ def count_ads_from_excel_bytes(raw: bytes) -> Tuple[Optional[int], int, bool]:
 def count_ads_from_downloads(downloads: List[Tuple[str, bytes]]) -> Dict[str, Any]:
     """Aggregate ad counts from in-memory Excel downloads."""
     combined_ids: Set[Any] = set()
+    combined_phones: Set[str] = set()
     total_rows = 0
     found_id = False
 
@@ -122,12 +145,38 @@ def count_ads_from_downloads(downloads: List[Tuple[str, bytes]]) -> Dict[str, An
                     for value in df[id_col].dropna().astype(str).str.strip():
                         if value and value.lower() not in ("nan", "none"):
                             combined_ids.add(value)
+
+                    phone_col = _find_phone_column(df.columns)
+                    if phone_col is not None:
+                        for value in df[phone_col].dropna():
+                            normalized = _normalize_phone(value)
+                            if normalized:
+                                combined_phones.add(normalized)
+            except Exception:
+                pass
+
+        # Even if no ID columns exist, still capture unique phones from phone column.
+        if not has_id:
+            try:
+                xl = pd.ExcelFile(io.BytesIO(raw), engine="openpyxl")
+                for sheet_name in xl.sheet_names:
+                    if sheet_name.strip().lower() in SKIP_SHEETS:
+                        continue
+                    df = pd.read_excel(xl, sheet_name=sheet_name, engine="openpyxl")
+                    phone_col = _find_phone_column(df.columns)
+                    if phone_col is None:
+                        continue
+                    for value in df[phone_col].dropna():
+                        normalized = _normalize_phone(value)
+                        if normalized:
+                            combined_phones.add(normalized)
             except Exception:
                 pass
 
     if found_id:
         return {
             "unique_ads": len(combined_ids),
+            "unique_phones": len(combined_phones),
             "total_rows": total_rows,
             "ads_source": "excel_ids",
         }
@@ -135,12 +184,14 @@ def count_ads_from_downloads(downloads: List[Tuple[str, bytes]]) -> Dict[str, An
     if total_rows > 0:
         return {
             "unique_ads": total_rows,
+            "unique_phones": len(combined_phones),
             "total_rows": total_rows,
             "ads_source": "excel_rows",
         }
 
     return {
         "unique_ads": 0,
+        "unique_phones": len(combined_phones),
         "total_rows": 0,
         "ads_source": "none",
     }
@@ -253,6 +304,7 @@ def count_scraper_ads(
     if json_total is not None:
         return {
             "unique_ads": json_total,
+            "unique_phones": excel_stats.get("unique_phones", 0),
             "total_rows": excel_stats["total_rows"] or json_total,
             "ads_source": "json_summary",
             "json_summary_key": json_key,

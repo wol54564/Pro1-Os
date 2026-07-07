@@ -300,6 +300,9 @@ _SCRAPER_PROFILES: Dict[str, Dict] = {
         "data_sheet_aliases": {"Sheet1", "Main", "Data", "Listings"},
         "core_columns": ["id", "title"],
     },
+    "Rest-Automotive-Part1": {
+        "min_file_size_kb": 7,
+    },
     "Rest-Automotive-Part2": {
         "core_columns": [
             "ID", "Title", "Phone", "User", "User ID", "User Email",

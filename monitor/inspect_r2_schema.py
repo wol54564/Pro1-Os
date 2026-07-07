@@ -301,7 +301,7 @@ _SCRAPER_PROFILES: Dict[str, Dict] = {
         "core_columns": ["id", "title"],
     },
     "Rest-Automotive-Part1": {
-        "min_file_size_kb": 7,
+        "min_file_size_kb": 6,
     },
     "Rest-Automotive-Part2": {
         "core_columns": [

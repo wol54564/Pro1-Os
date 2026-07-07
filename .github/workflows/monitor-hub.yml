@@ -92,11 +92,11 @@ jobs:
             python monitor/push_to_motherduck.py $FLAGS
           fi
 
-      # - name: Trigger Dashboard Refresh
-      #   if: success() # Only triggers if the previous steps succeeded
-      #   uses: peter-evans/repository-dispatch@v3
-      #   with:
-      #     token: ${{ secrets.DASHBOARD_TRIGGER_TOKEN }}
-      #     repository: futurefocusrecruitment6-ai/basex # Update this!
-      #     event-type: monitor-hub-completed
-      #     client-payload: '{"conclusion": "success", "branch": "${{ github.ref_name }}"}'
+      - name: Trigger Dashboard Refresh
+        if: success() # Only triggers if the previous steps succeeded
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.DASHBOARD_TRIGGER_TOKEN }}
+          repository: futurefocusrecruitment6-ai/basex # Update this!
+          event-type: monitor-hub-completed
+          client-payload: '{"conclusion": "success", "branch": "${{ github.ref_name }}"}'

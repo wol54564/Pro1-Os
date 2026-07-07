@@ -11,9 +11,11 @@ Priority:
 
 from __future__ import annotations
 
+import ast
 import io
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -35,6 +37,21 @@ PHONE_COLUMN_NAMES = frozenset({
     "phone",
     "phone number",
     "phonenumber",
+    "user_phone",
+    "user phone",
+    "whatsapp_phone",
+    "whatsapp phone",
+    "contacts",
+    "contact_no",
+    "contact no",
+})
+PHONE_COLUMN_CANONICAL = frozenset({
+    "phone",
+    "phonenumber",
+    "userphone",
+    "whatsappphone",
+    "contacts",
+    "contactno",
 })
 TOTAL_LISTINGS_KEYS = (
     "total_listings",
@@ -62,21 +79,52 @@ def _find_id_column(columns) -> Optional[str]:
     return None
 
 
-def _find_phone_column(columns) -> Optional[str]:
+def _normalize_header(name: Any) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(name).strip().lower())
+
+
+def _find_phone_columns(columns) -> List[str]:
+    out: List[str] = []
     for col in columns:
-        if str(col).strip().lower() in PHONE_COLUMN_NAMES:
-            return col
-    return None
+        raw = str(col).strip().lower()
+        canon = _normalize_header(col)
+        if raw in PHONE_COLUMN_NAMES or canon in PHONE_COLUMN_CANONICAL:
+            out.append(col)
+    return out
 
 
-def _normalize_phone(value: Any) -> Optional[str]:
+def _extract_phone_tokens(value: Any) -> List[str]:
+    if value is None:
+        return []
+
+    if isinstance(value, (list, tuple, set)):
+        tokens: List[str] = []
+        for item in value:
+            tokens.extend(_extract_phone_tokens(item))
+        return tokens
+
     text = str(value).strip()
-    if not text or text.lower() in {"nan", "none"}:
-        return None
+    if not text or text.lower() in {"nan", "none", "null"}:
+        return []
 
-    # Keep digits only so formatting variants count as the same phone.
-    digits = "".join(ch for ch in text if ch.isdigit())
-    return digits or None
+    # Some sheets store contacts as JSON/list string, e.g. ["965..."]
+    if (text.startswith("[") and text.endswith("]")) or (text.startswith("{") and text.endswith("}")):
+        try:
+            parsed = ast.literal_eval(text)
+            return _extract_phone_tokens(parsed)
+        except Exception:
+            pass
+
+    return re.findall(r"\d+", text)
+
+
+def _normalized_phones(value: Any) -> List[str]:
+    phones: List[str] = []
+    for token in _extract_phone_tokens(value):
+        digits = "".join(ch for ch in token if ch.isdigit())
+        if len(digits) >= 7:
+            phones.append(digits)
+    return phones
 
 
 def count_ads_from_excel_bytes(raw: bytes) -> Tuple[Optional[int], int, bool]:
@@ -140,11 +188,10 @@ def count_ads_from_downloads(downloads: List[Tuple[str, bytes]]) -> Dict[str, An
                         continue
                     df = pd.read_excel(xl, sheet_name=sheet_name, engine="openpyxl")
 
-                    phone_col = _find_phone_column(df.columns)
-                    if phone_col is not None:
+                    phone_cols = _find_phone_columns(df.columns)
+                    for phone_col in phone_cols:
                         for value in df[phone_col].dropna():
-                            normalized = _normalize_phone(value)
-                            if normalized:
+                            for normalized in _normalized_phones(value):
                                 combined_phones.add(normalized)
 
                     id_col = _find_id_column(df.columns)
@@ -164,13 +211,13 @@ def count_ads_from_downloads(downloads: List[Tuple[str, bytes]]) -> Dict[str, An
                     if sheet_name.strip().lower() in SKIP_SHEETS:
                         continue
                     df = pd.read_excel(xl, sheet_name=sheet_name, engine="openpyxl")
-                    phone_col = _find_phone_column(df.columns)
-                    if phone_col is None:
+                    phone_cols = _find_phone_columns(df.columns)
+                    if not phone_cols:
                         continue
-                    for value in df[phone_col].dropna():
-                        normalized = _normalize_phone(value)
-                        if normalized:
-                            combined_phones.add(normalized)
+                    for phone_col in phone_cols:
+                        for value in df[phone_col].dropna():
+                            for normalized in _normalized_phones(value):
+                                combined_phones.add(normalized)
             except Exception:
                 pass
 

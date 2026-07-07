@@ -139,12 +139,6 @@ def count_ads_from_downloads(downloads: List[Tuple[str, bytes]]) -> Dict[str, An
                     if sheet_name.strip().lower() in SKIP_SHEETS:
                         continue
                     df = pd.read_excel(xl, sheet_name=sheet_name, engine="openpyxl")
-                    id_col = _find_id_column(df.columns)
-                    if id_col is None:
-                        continue
-                    for value in df[id_col].dropna().astype(str).str.strip():
-                        if value and value.lower() not in ("nan", "none"):
-                            combined_ids.add(value)
 
                     phone_col = _find_phone_column(df.columns)
                     if phone_col is not None:
@@ -152,6 +146,13 @@ def count_ads_from_downloads(downloads: List[Tuple[str, bytes]]) -> Dict[str, An
                             normalized = _normalize_phone(value)
                             if normalized:
                                 combined_phones.add(normalized)
+
+                    id_col = _find_id_column(df.columns)
+                    if id_col is None:
+                        continue
+                    for value in df[id_col].dropna().astype(str).str.strip():
+                        if value and value.lower() not in ("nan", "none"):
+                            combined_ids.add(value)
             except Exception:
                 pass
 

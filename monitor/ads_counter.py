@@ -60,6 +60,122 @@ TOTAL_LISTINGS_KEYS = (
 )
 
 
+def _int_or_none(value: Any) -> Optional[int]:
+    if isinstance(value, (int, float)):
+        return int(value)
+    return None
+
+
+def _first_non_empty_str(row: Dict[str, Any], keys: Tuple[str, ...]) -> str:
+    for key in keys:
+        value = row.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return ""
+
+
+def _row_count_from_json_item(item: Dict[str, Any]) -> Optional[int]:
+    for key in (
+        "ads_count",
+        "listings_count",
+        "total_listings",
+        "total_ads",
+        "listings",
+        "total_businesses",
+        "count",
+    ):
+        val = _int_or_none(item.get(key))
+        if val is not None and val >= 0:
+            return val
+    return None
+
+
+def extract_subcategory_breakdown(data: Any) -> List[Dict[str, Any]]:
+    """
+    Extract normalized subcategory breakdown rows from summary JSON.
+
+    Output row shape:
+      {
+        "subcategory": str,
+        "level_3": str,
+        "ads_count": int,
+        "sheet_rows": int,
+        "sheets_count": int,
+        "source": "json_summary"
+      }
+    """
+    if not isinstance(data, dict):
+        return []
+
+    agg: Dict[Tuple[str, str], Dict[str, int]] = {}
+
+    top_lists = [
+        data.get("categories"),
+        data.get("main_categories"),
+        data.get("subcategories"),
+        data.get("items"),
+    ]
+
+    for items in top_lists:
+        if not isinstance(items, list):
+            continue
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+
+            category_name = _first_non_empty_str(
+                item,
+                ("name_en", "name", "name_ar", "category", "category_name", "slug"),
+            )
+            category_count = _row_count_from_json_item(item)
+
+            children = item.get("subcategories") or item.get("brands") or item.get("models")
+            if isinstance(children, list) and children:
+                for child in children:
+                    if not isinstance(child, dict):
+                        continue
+                    child_name = _first_non_empty_str(
+                        child,
+                        ("name_en", "name", "name_ar", "model", "brand", "slug"),
+                    )
+                    if not child_name:
+                        continue
+                    child_count = _row_count_from_json_item(child)
+                    if child_count is None:
+                        child_count = 0
+
+                    key = (category_name or "(unknown)", child_name)
+                    bucket = agg.setdefault(key, {"ads_count": 0, "sheet_rows": 0, "sheets_count": 0})
+                    bucket["ads_count"] += child_count
+                    bucket["sheet_rows"] += child_count
+                    bucket["sheets_count"] += 1
+                continue
+
+            # Flat category-only summaries still provide useful subcategory-level rows.
+            if category_name and category_count is not None:
+                key = (category_name, "")
+                bucket = agg.setdefault(key, {"ads_count": 0, "sheet_rows": 0, "sheets_count": 0})
+                bucket["ads_count"] += category_count
+                bucket["sheet_rows"] += category_count
+                bucket["sheets_count"] += 1
+
+    rows: List[Dict[str, Any]] = []
+    for (subcategory, level_3), stats in sorted(agg.items()):
+        rows.append({
+            "subcategory": subcategory,
+            "level_3": level_3,
+            "ads_count": stats["ads_count"],
+            "sheet_rows": stats["sheet_rows"],
+            "sheets_count": stats["sheets_count"],
+            "source": "json_summary",
+        })
+    return rows
+
+
 def _json_prefixes_for_date(base: str, dt: datetime) -> List[str]:
     seen: set = set()
     prefixes: List[str] = []
@@ -290,7 +406,7 @@ def load_json_summaries(
     bucket: str,
     r2_base: str,
     partition_dt: datetime,
-) -> Tuple[Optional[int], Optional[str]]:
+) -> Tuple[Optional[int], Optional[str], List[Dict[str, Any]]]:
     """
     List json-files/ under the scraper partition and return (total, source_key).
 
@@ -299,6 +415,7 @@ def load_json_summaries(
     """
     best_total: Optional[int] = None
     best_key: Optional[str] = None
+    best_breakdown: List[Dict[str, Any]] = []
 
     for prefix in _json_prefixes_for_date(r2_base.strip("/"), partition_dt):
         try:
@@ -316,15 +433,19 @@ def load_json_summaries(
                         continue
 
                     total = extract_total_from_json(data)
+                    breakdown = extract_subcategory_breakdown(data)
                     if total is None:
+                        if breakdown and not best_breakdown:
+                            best_breakdown = breakdown
                         continue
                     if best_total is None or total > best_total:
                         best_total = total
                         best_key = key
+                        best_breakdown = breakdown
         except Exception as exc:
             log.debug(f"JSON listing under {prefix}: {exc}")
 
-    return best_total, best_key
+    return best_total, best_key, best_breakdown
 
 
 def count_scraper_ads(
@@ -341,12 +462,13 @@ def count_scraper_ads(
     """
     excel_stats = count_ads_from_downloads(downloads)
 
-    json_total, json_key = load_json_summaries(client, bucket, r2_base, partition_dt)
+    json_total, json_key, json_breakdown = load_json_summaries(client, bucket, r2_base, partition_dt)
 
     if excel_stats["ads_source"] == "excel_ids":
         result = dict(excel_stats)
         result["json_summary_key"] = json_key
         result["json_total_listings"] = json_total
+        result["subcategory_breakdown"] = json_breakdown
         return result
 
     if json_total is not None:
@@ -357,10 +479,12 @@ def count_scraper_ads(
             "ads_source": "json_summary",
             "json_summary_key": json_key,
             "json_total_listings": json_total,
+            "subcategory_breakdown": json_breakdown,
         }
 
     return {
         **excel_stats,
         "json_summary_key": json_key,
         "json_total_listings": json_total,
+        "subcategory_breakdown": json_breakdown,
     }

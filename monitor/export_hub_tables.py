@@ -160,6 +160,7 @@ ALERTS_COLS = [
 ]
 
 SKIP_SUBCATEGORY_SHEETS = frozenset({"info", "no data"})
+GENERIC_SHEET_NAMES = frozenset({"sheet1", "main", "data", "listings", "all listings"})
 
 
 def _scraper_entries(report: Dict) -> List[Tuple[str, Dict]]:
@@ -452,6 +453,66 @@ def _resolve_uses_proxy(site: Dict, reg: Dict, report: Dict) -> Optional[bool]:
     return None
 
 
+def _to_non_negative_int(value: Any, default: int = 0) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= 0 else default
+
+
+def _collect_json_subcategory_rows(
+    hub_partition: str,
+    site_id: str,
+    scraper: str,
+    breakdown: Any,
+) -> List[Dict[str, Any]]:
+    if not isinstance(breakdown, list):
+        return []
+
+    rows: List[Dict[str, Any]] = []
+    for raw in breakdown:
+        if not isinstance(raw, dict):
+            continue
+        subcategory = str(raw.get("subcategory") or "").strip()
+        if not subcategory:
+            continue
+
+        level_3 = str(raw.get("level_3") or "").strip()
+        ads_count = _to_non_negative_int(
+            raw.get("ads_count", raw.get("listings_count", raw.get("count", 0)))
+        )
+        sheet_rows = _to_non_negative_int(raw.get("sheet_rows"), default=ads_count)
+        sheets_count = _to_non_negative_int(raw.get("sheets_count"), default=1)
+
+        rows.append({
+            "hub_partition_date": hub_partition,
+            "site_id": site_id,
+            "scraper": scraper,
+            "subcategory": subcategory,
+            "level_3": level_3,
+            "ads_count": ads_count,
+            "sheet_rows": sheet_rows,
+            "sheets_count": sheets_count,
+            "source": str(raw.get("source") or "json_summary"),
+        })
+    return rows
+
+
+def _subcategory_from_file_key(file_key: Any) -> str:
+    if not file_key:
+        return ""
+    try:
+        stem = Path(str(file_key)).stem
+    except Exception:
+        return ""
+    return stem.replace("_", " ").replace("-", " ").strip().title()
+
+
+def _is_generic_sheet_name(sheet_name: str) -> bool:
+    return sheet_name.strip().lower() in GENERIC_SHEET_NAMES
+
+
 def flatten_hub(
     merged: Dict,
     registry: Optional[Dict] = None,
@@ -538,10 +599,11 @@ def flatten_hub(
             "uses_proxy": _resolve_uses_proxy(site, reg, report),
         })
         for scraper_name, sr in _scraper_entries(report):
+            scraper_label = sr.get("scraper") or scraper_name
             scraper_rows.append({
                 "hub_partition_date": hub_partition,
                 "site_id": site_id,
-                "scraper": sr.get("scraper") or scraper_name,
+                "scraper": scraper_label,
                 "files_found": sr.get("files_found"),
                 "checks_passed": sr.get("checks_passed"),
                 "checks_total": sr.get("checks_total"),
@@ -561,8 +623,21 @@ def flatten_hub(
                 "failed_items_summary": sr.get("failed_items_summary"),
             })
 
+            json_rows = _collect_json_subcategory_rows(
+                hub_partition,
+                site_id,
+                scraper_label,
+                sr.get("subcategory_breakdown"),
+            )
+            if json_rows:
+                subcategory_rows.extend(json_rows)
+                continue
+
             subcat_agg: Dict[Tuple[str, str], Dict[str, int]] = {}
             for file_result in sr.get("file_results") or []:
+                file_subcategory = _subcategory_from_file_key(
+                    file_result.get("file_key") or file_result.get("file")
+                )
                 for sheet in file_result.get("sheets") or []:
                     raw_name = str(sheet.get("name") or "").strip()
                     if not raw_name:
@@ -574,14 +649,19 @@ def flatten_hub(
                     if sheet_rows < 0:
                         sheet_rows = 0
 
-                    normalized = (
-                        raw_name.replace(" > ", "/")
-                        .replace("::", "/")
-                        .replace(" - ", "/")
-                    )
-                    parts = [p.strip() for p in normalized.split("/") if p.strip()]
-                    subcategory = parts[0] if parts else raw_name
-                    level_3 = parts[1] if len(parts) > 1 else ""
+                    # Prefer file-based grouping for multi-sheet workbooks (e.g., Toyota.xlsx + Hilux sheet).
+                    if file_subcategory:
+                        subcategory = file_subcategory
+                        level_3 = "" if _is_generic_sheet_name(raw_name) else raw_name
+                    else:
+                        normalized = (
+                            raw_name.replace(" > ", "/")
+                            .replace("::", "/")
+                            .replace(" - ", "/")
+                        )
+                        parts = [p.strip() for p in normalized.split("/") if p.strip()]
+                        subcategory = parts[0] if parts else raw_name
+                        level_3 = parts[1] if len(parts) > 1 else ""
                     agg_key = (subcategory, level_3)
 
                     bucket = subcat_agg.setdefault(
@@ -598,7 +678,7 @@ def flatten_hub(
                 subcategory_rows.append({
                     "hub_partition_date": hub_partition,
                     "site_id": site_id,
-                    "scraper": sr.get("scraper") or scraper_name,
+                    "scraper": scraper_label,
                     "subcategory": subcategory,
                     "level_3": level_3,
                     "ads_count": stats["sheet_rows"],

@@ -1442,6 +1442,8 @@ def main():
             scraper_result["ads_source"] = ads_stats.get("ads_source", "none")
             if ads_stats.get("json_summary_key"):
                 scraper_result["json_summary_key"] = ads_stats["json_summary_key"]
+            if ads_stats.get("subcategory_breakdown"):
+                scraper_result["subcategory_breakdown"] = ads_stats["subcategory_breakdown"]
             req_stats = count_scraper_request_metrics(
                 r2_client, bucket, r2_base, partition_dt
             )
@@ -1513,6 +1515,8 @@ def main():
         scraper_result["ads_source"] = ads_stats.get("ads_source", "none")
         if ads_stats.get("json_summary_key"):
             scraper_result["json_summary_key"] = ads_stats["json_summary_key"]
+        if ads_stats.get("subcategory_breakdown"):
+            scraper_result["subcategory_breakdown"] = ads_stats["subcategory_breakdown"]
 
         req_stats = count_scraper_request_metrics(
             r2_client, bucket, r2_base, partition_dt

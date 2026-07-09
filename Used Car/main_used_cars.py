@@ -6,7 +6,7 @@ import os
 import requests
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple, Any
 from json_scraper_used_cars import UsedCarsJsonScraper
 from s3_helper import S3Helper
 
@@ -264,7 +264,7 @@ class UsedCarsScraperOrchestrator:
         
         logger.info(f"Successfully created Excel file: {excel_path} with {sheets_created} sheet(s)")
     
-    async def scrape_category(self, main_category: Dict) -> Dict[str, List[Dict]]:
+    async def scrape_category(self, main_category: Dict) -> Tuple[Dict[str, List[Dict]], List[Dict[str, Any]]]:
         """
         Scrape all subcategories and listings for a main category
         
@@ -283,13 +283,14 @@ class UsedCarsScraperOrchestrator:
         logger.info(f"{'='*60}")
         
         category_data = {}
+        subcategory_summary: List[Dict[str, Any]] = []
         
         # Get subcategories
         subcategories = await self.scraper.get_subcategories(main_slug)
         
         if not subcategories:
             logger.warning(f"No subcategories found for {main_name_en}")
-            return category_data
+            return category_data, subcategory_summary
         
         # Fetch listings for each subcategory
         for subcategory in subcategories:
@@ -317,13 +318,19 @@ class UsedCarsScraperOrchestrator:
                 
                 if detailed_listings:
                     category_data[sub_slug] = detailed_listings
+                    subcategory_summary.append({
+                        "slug": sub_slug,
+                        "name_en": sub_name_en,
+                        "name_ar": subcategory.get("name_ar"),
+                        "listings_count": len(detailed_listings),
+                    })
                     logger.info(f"    ✓ Fetched {len(detailed_listings)} detailed listings with images")
                 else:
                     logger.warning(f"    ✗ No detailed listings retrieved for {sub_name_en}")
             
             await asyncio.sleep(0.3)  # Be gentle with the server
         
-        return category_data
+        return category_data, subcategory_summary
     
     async def run_scraper(self, max_categories: Optional[int] = None):
         """
@@ -357,7 +364,7 @@ class UsedCarsScraperOrchestrator:
                     logger.info(f"\n[{idx}/{len(main_categories)}] Processing: {category['name_en']}")
                     
                     # Scrape category data
-                    category_data = await self.scrape_category(category)
+                    category_data, subcategory_summary = await self.scrape_category(category)
                     
                     if not category_data:
                         logger.warning(f"No data collected for {category['name_en']}")
@@ -387,7 +394,8 @@ class UsedCarsScraperOrchestrator:
                                 "name_en": category["name_en"],
                                 "slug": category.get("slug"),
                                 "listings_count": category_listings,
-                                "subcategories_count": len(category_data),
+                                "subcategories_count": len(subcategory_summary),
+                                "subcategories": subcategory_summary,
                             })
                         else:
                             logger.error(f"✗ Failed to upload {excel_filename} to S3")

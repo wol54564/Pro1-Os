@@ -284,16 +284,78 @@ def count_ads_from_excel_bytes(raw: bytes) -> Tuple[Optional[int], int, bool]:
     return unique_ads, total_rows, found_id
 
 
+def _hour_from_date_published(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+
+    if isinstance(value, datetime) or isinstance(value, pd.Timestamp):
+        return int(value.hour)
+
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none", "null"}:
+        return None
+
+    try:
+        dt = pd.to_datetime(text, errors="coerce")
+    except Exception:
+        return None
+
+    if pd.isna(dt):
+        return None
+
+    return int(dt.hour)
+
+
+def _count_date_published_hours_in_excel(raw: bytes) -> Dict[int, int]:
+    hour_counts: Dict[int, int] = {}
+    try:
+        xl = pd.ExcelFile(io.BytesIO(raw), engine="openpyxl")
+    except Exception as exc:
+        log.debug(f"Date-published hour counts skipped: {exc}")
+        return hour_counts
+
+    for sheet_name in xl.sheet_names:
+        if sheet_name.strip().lower() in SKIP_SHEETS:
+            continue
+        try:
+            df = pd.read_excel(xl, sheet_name=sheet_name, engine="openpyxl")
+        except Exception as exc:
+            log.debug(f"Sheet '{sheet_name}' skipped for date_published hours: {exc}")
+            continue
+        if df.empty:
+            continue
+
+        date_col = next(
+            (c for c in df.columns if str(c).strip().lower() in ("date_published", "date published")),
+            None,
+        )
+        if date_col is None:
+            continue
+
+        for value in df[date_col].dropna():
+            hour = _hour_from_date_published(value)
+            if hour is None:
+                continue
+            hour_counts[hour] = hour_counts.get(hour, 0) + 1
+
+    return hour_counts
+
+
 def count_ads_from_downloads(downloads: List[Tuple[str, bytes]]) -> Dict[str, Any]:
     """Aggregate ad counts from in-memory Excel downloads."""
     combined_ids: Set[Any] = set()
     combined_phones: Set[str] = set()
     total_rows = 0
     found_id = False
+    date_published_hour_counts: Dict[int, int] = {}
 
     for _key, raw in downloads:
         unique_ads, rows, has_id = count_ads_from_excel_bytes(raw)
         total_rows += rows
+        file_hour_counts = _count_date_published_hours_in_excel(raw)
+        for hour, count in file_hour_counts.items():
+            date_published_hour_counts[hour] = date_published_hour_counts.get(hour, 0) + count
+
         if has_id and unique_ads is not None:
             found_id = True
             # Re-read IDs for cross-file dedup (small daily files)
@@ -343,6 +405,7 @@ def count_ads_from_downloads(downloads: List[Tuple[str, bytes]]) -> Dict[str, An
             "unique_phones": len(combined_phones),
             "total_rows": total_rows,
             "ads_source": "excel_ids",
+            "date_published_hour_counts": date_published_hour_counts,
         }
 
     if total_rows > 0:
@@ -351,6 +414,7 @@ def count_ads_from_downloads(downloads: List[Tuple[str, bytes]]) -> Dict[str, An
             "unique_phones": len(combined_phones),
             "total_rows": total_rows,
             "ads_source": "excel_rows",
+            "date_published_hour_counts": date_published_hour_counts,
         }
 
     return {
@@ -358,6 +422,7 @@ def count_ads_from_downloads(downloads: List[Tuple[str, bytes]]) -> Dict[str, An
         "unique_phones": len(combined_phones),
         "total_rows": 0,
         "ads_source": "none",
+        "date_published_hour_counts": date_published_hour_counts,
     }
 
 
@@ -480,6 +545,7 @@ def count_scraper_ads(
             "json_summary_key": json_key,
             "json_total_listings": json_total,
             "subcategory_breakdown": json_breakdown,
+            "date_published_hour_counts": excel_stats.get("date_published_hour_counts", {}),
         }
 
     return {

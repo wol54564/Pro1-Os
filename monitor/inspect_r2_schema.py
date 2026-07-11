@@ -1388,6 +1388,7 @@ def main():
             "unique_phones":  0,
             "total_rows":     0,
             "ads_source":     "none",
+            "date_published_hour_counts": {},
         }
 
         scraper_result["r2_file_count"] = count_scraper_r2_files(r2_client, bucket, r2_base)
@@ -1440,6 +1441,8 @@ def main():
             scraper_result["unique_phones"] = ads_stats.get("unique_phones") or 0
             scraper_result["total_rows"] = ads_stats.get("total_rows") or 0
             scraper_result["ads_source"] = ads_stats.get("ads_source", "none")
+            if ads_stats.get("date_published_hour_counts") is not None:
+                scraper_result["date_published_hour_counts"] = ads_stats.get("date_published_hour_counts") or {}
             if ads_stats.get("json_summary_key"):
                 scraper_result["json_summary_key"] = ads_stats["json_summary_key"]
             if ads_stats.get("subcategory_breakdown"):
@@ -1513,6 +1516,8 @@ def main():
         scraper_result["unique_phones"] = ads_stats.get("unique_phones") or 0
         scraper_result["total_rows"] = ads_stats.get("total_rows") or 0
         scraper_result["ads_source"] = ads_stats.get("ads_source", "none")
+        if ads_stats.get("date_published_hour_counts") is not None:
+            scraper_result["date_published_hour_counts"] = ads_stats.get("date_published_hour_counts") or {}
         if ads_stats.get("json_summary_key"):
             scraper_result["json_summary_key"] = ads_stats["json_summary_key"]
         if ads_stats.get("subcategory_breakdown"):

@@ -45,3 +45,5 @@ monitor/REQUEST_METRICS_PROMPT.md
 sites/*
 test_github_workflow_metadata.py
 dashboard/*
+tests/test_export_hub_hourly.py
+monitor/data files/*

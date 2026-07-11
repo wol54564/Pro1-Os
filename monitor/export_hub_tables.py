@@ -469,6 +469,50 @@ def _to_non_negative_int(value: Any, default: int = 0) -> int:
     return parsed if parsed >= 0 else default
 
 
+def _extract_hour_counts(scraper_result: Dict[str, Any]) -> Dict[int, int]:
+    """Extract hourly ad counts from common report shapes."""
+    candidates: List[Dict[str, Any]] = []
+
+    for key in (
+        "date_published_hour_counts",
+        "hourly_counts",
+        "hour_counts",
+        "date_published_hours",
+    ):
+        value = scraper_result.get(key)
+        if isinstance(value, dict):
+            candidates.append(value)
+
+    for container_key in ("stats", "ads_stats", "summary"):
+        container = scraper_result.get(container_key)
+        if isinstance(container, dict):
+            for key in (
+                "date_published_hour_counts",
+                "hourly_counts",
+                "hour_counts",
+                "date_published_hours",
+            ):
+                value = container.get(key)
+                if isinstance(value, dict):
+                    candidates.append(value)
+
+    if not candidates:
+        return {}
+
+    out: Dict[int, int] = {}
+    for mapping in candidates:
+        for raw_hour, raw_count in mapping.items():
+            try:
+                hour = int(raw_hour)
+            except (TypeError, ValueError):
+                continue
+            if hour < 0 or hour > 23:
+                continue
+            count = _to_non_negative_int(raw_count)
+            out[hour] = out.get(hour, 0) + count
+    return out
+
+
 def _collect_json_subcategory_rows(
     hub_partition: str,
     site_id: str,
@@ -633,16 +677,12 @@ def flatten_hub(
                 "failed_items_summary": sr.get("failed_items_summary"),
             })
 
-            for hour, count in (sr.get("date_published_hour_counts") or {}).items():
-                try:
-                    hour_int = int(hour)
-                except (TypeError, ValueError):
-                    continue
+            for hour, count in _extract_hour_counts(sr).items():
                 scraper_hourly_rows.append({
                     "hub_partition_date": hub_partition,
                     "site_id": site_id,
                     "scraper": scraper_label,
-                    "hour": hour_int,
+                    "hour": hour,
                     "ads_count": _to_non_negative_int(count),
                 })
 

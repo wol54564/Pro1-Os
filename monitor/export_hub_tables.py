@@ -203,7 +203,63 @@ def _status_to_workflow_status(site_status: Optional[str]) -> Optional[str]:
 
 
 def _duration_from_github_run(github_run: Dict) -> Optional[int]:
-    # Prefer an explicit duration field
+    """
+    Return scraper pipeline duration.
+    Ignore Schema Monitor duration.
+    Sum multiple scraper workflows.
+    """
+
+    workflows = github_run.get("workflows") or []
+
+    # First: calculate from scraper workflows only
+    if workflows:
+        total = 0
+        found = False
+
+        for workflow in workflows:
+            if not isinstance(workflow, dict):
+                continue
+
+            name = str(workflow.get("name") or "")
+            if is_monitor_workflow(name):
+                continue
+
+            duration = workflow.get("duration_sec")
+            if duration is not None:
+                try:
+                    total += int(duration)
+                    found = True
+                    continue
+                except (TypeError, ValueError):
+                    pass
+
+            started = workflow.get("run_started_at") or workflow.get("started_at")
+            finished = workflow.get("updated_at") or workflow.get("finished_at")
+
+            if started and finished:
+                try:
+                    start_dt = datetime.fromisoformat(
+                        str(started).replace("Z", "+00:00")
+                    )
+                    finish_dt = datetime.fromisoformat(
+                        str(finished).replace("Z", "+00:00")
+                    )
+                    total += max(
+                        0,
+                        int((finish_dt - start_dt).total_seconds())
+                    )
+                    found = True
+                except (ValueError, TypeError):
+                    pass
+
+        if found:
+            return total
+
+    # Do not use Schema Monitor duration
+    if is_monitor_workflow(github_run.get("workflow_name")):
+        return None
+
+    # Legacy fallback
     duration = github_run.get("duration_sec")
     if duration is not None:
         try:
@@ -211,56 +267,7 @@ def _duration_from_github_run(github_run: Dict) -> Optional[int]:
         except (TypeError, ValueError):
             pass
 
-    mr = github_run.get("monitor_run") or {}
-    if isinstance(mr, dict):
-        monitor_duration = mr.get("duration_sec")
-        if monitor_duration is not None:
-            try:
-                return int(monitor_duration)
-            except (TypeError, ValueError):
-                pass
-
-    # Check monitor_run timestamps if present
-    started = mr.get("started_at") or github_run.get("started_at")
-    finished = mr.get("finished_at") or github_run.get("finished_at")
-    if started and finished:
-        try:
-            start_dt = datetime.fromisoformat(str(started).replace("Z", "+00:00"))
-            finish_dt = datetime.fromisoformat(str(finished).replace("Z", "+00:00"))
-            return max(0, int((finish_dt - start_dt).total_seconds()))
-        except (ValueError, TypeError):
-            pass
-
-    # If workflows detail exists, sum per-workflow durations or compute from their timestamps
-    wf_list = github_run.get("workflows") or []
-    total = 0
-    found = False
-    for w in wf_list:
-        d = w.get("duration_sec")
-        if d is not None:
-            try:
-                total += int(d)
-                found = True
-                continue
-            except (TypeError, ValueError):
-                pass
-        # try run_started_at and updated_at
-        rs = w.get("run_started_at") or w.get("started_at")
-        ru = w.get("updated_at") or w.get("finished_at")
-        if rs and ru:
-            try:
-                sdt = datetime.fromisoformat(str(rs).replace("Z", "+00:00"))
-                edt = datetime.fromisoformat(str(ru).replace("Z", "+00:00"))
-                total += max(0, int((edt - sdt).total_seconds()))
-                found = True
-            except (ValueError, TypeError):
-                pass
-
-    if found:
-        return total
-
     return None
-
 
 def _is_missing_workflow_name(value: Optional[str]) -> bool:
     if value is None:

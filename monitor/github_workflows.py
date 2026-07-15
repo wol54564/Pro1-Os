@@ -202,9 +202,11 @@ def _parse_github_dt(value: Optional[str]) -> Optional[datetime]:
 
 def _run_duration_sec(run: Dict) -> int:
     started = _parse_github_dt(run.get("run_started_at"))
-    finished = _parse_github_dt(run.get("updated_at"))
+    finished = _parse_github_dt(run.get("completed_at"))
+
     if started and finished:
         return max(0, int((finished - started).total_seconds()))
+
     return 0
 
 
@@ -322,12 +324,13 @@ def fetch_pipeline_github_meta(
     last_run = runs_detail[-1]
     primary_owner = entries[0]["owner"]
     primary_repo = entries[0]["repo"]
+    total_duration = sum(r.get("duration_sec") or 0 for r in runs_detail)
 
     return {
         "run_place": "github",
         "workflow_name": format_workflow_label(label_names),
         "workflow_status": _pipeline_status(conclusions),
-        "duration_sec": sum(r.get("duration_sec") or 0 for r in runs_detail),
+        "duration_sec": total_duration,
         "workflow_run_id": str(last_run["run_id"]) if last_run.get("run_id") else None,
         "workflow_run_number": last_run.get("run_number"),
         "github_repository": f"{primary_owner}/{primary_repo}",

@@ -478,36 +478,29 @@ def _to_non_negative_int(value: Any, default: int = 0) -> int:
 
 def _extract_hour_counts(scraper_result: Dict[str, Any]) -> Dict[int, int]:
     """Extract hourly ad counts from common report shapes."""
-    candidates: List[Dict[str, Any]] = []
+    def _parse_hour_list(rows: Any) -> Dict[int, int]:
+        if not isinstance(rows, list):
+            return {}
+        out: Dict[int, int] = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            raw_hour = row.get("hour")
+            raw_count = row.get("ads_count", row.get("count", 0))
+            try:
+                hour = int(raw_hour)
+            except (TypeError, ValueError):
+                continue
+            if hour < 0 or hour > 23:
+                continue
+            count = _to_non_negative_int(raw_count)
+            out[hour] = out.get(hour, 0) + count
+        return out
 
-    for key in (
-        "date_published_hour_counts",
-        "hourly_counts",
-        "hour_counts",
-        "date_published_hours",
-    ):
-        value = scraper_result.get(key)
-        if isinstance(value, dict):
-            candidates.append(value)
-
-    for container_key in ("stats", "ads_stats", "summary"):
-        container = scraper_result.get(container_key)
-        if isinstance(container, dict):
-            for key in (
-                "date_published_hour_counts",
-                "hourly_counts",
-                "hour_counts",
-                "date_published_hours",
-            ):
-                value = container.get(key)
-                if isinstance(value, dict):
-                    candidates.append(value)
-
-    if not candidates:
-        return {}
-
-    out: Dict[int, int] = {}
-    for mapping in candidates:
+    def _parse_hour_dict(mapping: Any) -> Dict[int, int]:
+        if not isinstance(mapping, dict):
+            return {}
+        out: Dict[int, int] = {}
         for raw_hour, raw_count in mapping.items():
             try:
                 hour = int(raw_hour)
@@ -517,7 +510,50 @@ def _extract_hour_counts(scraper_result: Dict[str, Any]) -> Dict[int, int]:
                 continue
             count = _to_non_negative_int(raw_count)
             out[hour] = out.get(hour, 0) + count
-    return out
+        return out
+
+    # New monitor report shape (list-based) — choose first populated key to avoid
+    # double-counting aliases like hourly_ads + ads_by_hour.
+    for key in ("ads_by_hour", "hourly_ads"):
+        parsed = _parse_hour_list(scraper_result.get(key))
+        if parsed:
+            return parsed
+
+    for container_key in ("stats", "ads_stats", "summary"):
+        container = scraper_result.get(container_key)
+        if not isinstance(container, dict):
+            continue
+        for key in ("ads_by_hour", "hourly_ads"):
+            parsed = _parse_hour_list(container.get(key))
+            if parsed:
+                return parsed
+
+    # Legacy report shape (dict-based).
+    for key in (
+        "date_published_hour_counts",
+        "hourly_counts",
+        "hour_counts",
+        "date_published_hours",
+    ):
+        parsed = _parse_hour_dict(scraper_result.get(key))
+        if parsed:
+            return parsed
+
+    for container_key in ("stats", "ads_stats", "summary"):
+        container = scraper_result.get(container_key)
+        if not isinstance(container, dict):
+            continue
+        for key in (
+            "date_published_hour_counts",
+            "hourly_counts",
+            "hour_counts",
+            "date_published_hours",
+        ):
+            parsed = _parse_hour_dict(container.get(key))
+            if parsed:
+                return parsed
+
+    return {}
 
 
 def _collect_json_subcategory_rows(

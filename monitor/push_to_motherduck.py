@@ -68,6 +68,21 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
     "alerts": ALERTS_COLS,
 }
 
+TABLE_PRIMARY_KEYS: Dict[str, List[str]] = {
+    "hub_daily": ["hub_partition_date"],
+    "site_daily": ["hub_partition_date", "site_id"],
+    "scraper_daily": ["hub_partition_date", "site_id", "scraper"],
+    "scraper_hourly_daily": ["hub_partition_date", "site_id", "scraper", "hour"],
+    "scraper_subcategory_daily": [
+        "hub_partition_date",
+        "site_id",
+        "scraper",
+        "subcategory",
+        "level_3",
+    ],
+    "alerts": ["alert_id"],
+}
+
 SCHEMA_STATEMENTS = [
     """
     CREATE TABLE IF NOT EXISTS hub_daily (
@@ -276,6 +291,21 @@ def _align_df(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
     return out[columns]
 
 
+def _dedupe_for_table(table: str, df: pd.DataFrame) -> pd.DataFrame:
+    """Drop duplicate rows for the table primary key within a single batch."""
+    primary_keys = TABLE_PRIMARY_KEYS.get(table)
+    if not primary_keys or df.empty:
+        return df
+
+    deduped = df.drop_duplicates(subset=primary_keys, keep="last")
+    dropped = len(df) - len(deduped)
+    if dropped > 0:
+        log.warning(
+            f"  {table}: dropped {dropped} duplicate row(s) by PK {primary_keys} before insert"
+        )
+    return deduped
+
+
 def upsert_table(
     con: duckdb.DuckDBPyConnection,
     table: str,
@@ -292,6 +322,7 @@ def upsert_table(
         return 0
 
     batch = _align_df(df, columns)
+    batch = _dedupe_for_table(table, batch)
     con.register("batch_df", batch)
     cols = ", ".join(columns)
     con.execute(f"INSERT INTO {table} ({cols}) SELECT {cols} FROM batch_df")

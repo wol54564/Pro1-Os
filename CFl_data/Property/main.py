@@ -246,7 +246,12 @@ async def scrape_subcategory(subcat):
     # ---------------------------------------------------
     if not results:
         logger.warning(f"No listings found for {slug} from {YESTERDAY}")
-        return
+        return {
+            "slug": slug,
+            "name": name,
+            "listings_count": 0,
+            "sheets_count": 0
+        }
 
     temp_file = f"temp_{slug}.xlsx"
     excel_path = f"4sale-data/property/year={YEAR}/month={MONTH}/day={DAY}/excel-files/{slug}.xlsx"
@@ -261,7 +266,16 @@ async def scrape_subcategory(subcat):
     with open(temp_file, "rb") as f:
         await R2.upload_fileobj(f, excel_path)
 
-    logger.info(f"[OK] {slug} saved to R2 with {len(set(r['sheet'] for r in results))} sheets")
+    sheets_count = len(set(r["sheet"] for r in results))
+    logger.info(f"[OK] {slug} saved to R2 with {sheets_count} sheets")
+    
+    # Return summary for aggregation
+    return {
+        "slug": slug,
+        "name": name,
+        "listings_count": len(results),
+        "sheets_count": sheets_count
+    }
 
 
 async def main():
@@ -270,12 +284,61 @@ async def main():
     logger.info(f"Scraping for date: {YESTERDAY}")
     logger.info("="*50)
     
+    start_time = time.time()
+    
     try:
         subcategories = await get_property_subcategories()
         logger.info(f"Creating tasks for {len(subcategories)} subcategories")
         tasks = [scrape_subcategory(sub) for sub in subcategories]
-        await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks)
         logger.info("All scraping tasks completed successfully")
+        
+        # Filter out None results
+        results = [r for r in results if r is not None]
+        
+        # Aggregate results
+        total_listings = sum(r["listings_count"] for r in results)
+        total_sheets = sum(r["sheets_count"] for r in results)
+        
+        # Create and upload JSON summary
+        logger.info("\nUploading JSON summary...")
+        duration_sec = time.time() - start_time
+        error_rate_pct = 0.0  # No request tracking in this module
+        requests_per_min = 0.0
+        
+        json_summary = {
+            "scraped_at": datetime.now().isoformat(),
+            "data_scraped_date": YESTERDAY,
+            "saved_to_R2_date": f"{YEAR}-{MONTH:02d}-{DAY:02d}",
+            "total_subcategories": len(results),
+            "total_listings": total_listings,
+            "total_sheets": total_sheets,
+            "subcategories": results,
+            "request_metrics": {
+                "requests_total": 0,
+                "requests_failed": 0,
+                "error_rate_pct": round(error_rate_pct, 2),
+                "requests_per_min": round(requests_per_min, 2),
+                "duration_sec": round(duration_sec, 2),
+            },
+        }
+        
+        # Save JSON summary to R2
+        json_filename = f"property_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        json_path = f"4sale-data/property/year={YEAR}/month={MONTH}/day={DAY}/json-files/{json_filename}"
+        
+        temp_json = json_filename
+        with open(temp_json, 'w', encoding='utf-8') as f:
+            json.dump(json_summary, f, ensure_ascii=False, indent=2)
+        
+        with open(temp_json, 'rb') as f:
+            await R2.upload_fileobj(f, json_path)
+        
+        logger.info(f"[OK] Uploaded JSON summary to {json_path}")
+        
+        import os
+        os.remove(temp_json)
+        
     except Exception as e:
         logger.error(f"Error during scraping: {e}", exc_info=True)
     

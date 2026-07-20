@@ -47,6 +47,9 @@ class MainScraper:
         self.chunk_delay = 5
         self.yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
         self.session = create_session()
+        self.start_time = None
+        self.requests_total = 0
+        self.requests_failed = 0
         logger.info(f"Scraping data for date: {self.yesterday}")
 
     async def upload_bytes_to_R2(self, data_bytes, R2_path):

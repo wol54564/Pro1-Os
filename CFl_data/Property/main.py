@@ -1,6 +1,7 @@
 import asyncio
 import pandas as pd
 from datetime import datetime, timedelta
+import time
 import json
 import logging
 import requests
@@ -18,6 +19,11 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Metrics tracking for monitoring
+start_time = None
+requests_total = 0
+requests_failed = 0
 
 YESTERDAY = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 YEAR, MONTH, DAY = datetime.now().year, datetime.now().month, datetime.now().day

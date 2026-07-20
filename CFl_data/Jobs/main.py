@@ -2,6 +2,7 @@ import asyncio
 import pandas as pd
 import json
 import logging
+import time
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -33,6 +34,9 @@ class JobsScraperOrchestrator:
         self.temp_dir.mkdir(exist_ok=True)
         self.scrape_date = datetime.now() - timedelta(days=1)  # Yesterday's data for scraping
         self.save_date = datetime.now()  # Today's date for R2 folder partitioning
+        self.start_time = None
+        self.requests_total = 0
+        self.requests_failed = 0
         logger.info(f"Scraping data for date: {self.scrape_date.strftime('%Y-%m-%d')}")
         logger.info(f"Saving to R2 with date: {self.save_date.strftime('%Y-%m-%d')}")
         logger.info("Mode: Scrape ALL available pages (no limit)")
@@ -373,6 +377,16 @@ class JobsScraperOrchestrator:
                 temp_excel.unlink(missing_ok=True)
             
             # Save upload summary as JSON
+            duration_sec = time.time() - self.start_time if self.start_time else 0
+            error_rate_pct = (self.requests_failed / self.requests_total * 100.0) if self.requests_total > 0 else 0.0
+            requests_per_min = (self.requests_total / (duration_sec / 60.0)) if duration_sec > 0 else 0.0
+            upload_summary["request_metrics"] = {
+                "requests_total": self.requests_total,
+                "requests_failed": self.requests_failed,
+                "error_rate_pct": round(error_rate_pct, 2),
+                "requests_per_min": round(requests_per_min, 2),
+                "duration_sec": round(duration_sec, 2),
+            }
             summary_file = self.temp_dir / "upload_summary.json"
             with open(summary_file, 'w', encoding='utf-8') as f:
                 json.dump(upload_summary, f, indent=2, ensure_ascii=False)
@@ -416,6 +430,7 @@ class JobsScraperOrchestrator:
         """
         try:
             await self.initialize()
+            self.start_time = time.time()
             
             # Scrape all data
             logger.info("Starting Jobs scraper...")

@@ -3,6 +3,7 @@ import pandas as pd
 import json
 import logging
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -33,6 +34,9 @@ class DalilScraperOrchestrator:
         self.temp_dir = Path(temp_dir)
         self.temp_dir.mkdir(exist_ok=True)
         self.save_date = datetime.now()
+        self.start_time = None
+        self.requests_total = 0
+        self.requests_failed = 0
         logger.info(f"Saving to R2 with date: {self.save_date.strftime('%Y-%m-%d')}")
         
     async def initialize(self):
@@ -346,13 +350,23 @@ class DalilScraperOrchestrator:
             total_businesses = sum(len(cat.get("businesses", [])) for cat in categories_data)
             upload_summary["total_businesses"] = total_businesses
             
+            duration_sec = time.time() - self.start_time if self.start_time else 0
+            error_rate_pct = (self.requests_failed / self.requests_total * 100.0) if self.requests_total > 0 else 0.0
+            requests_per_min = (self.requests_total / (duration_sec / 60.0)) if duration_sec > 0 else 0.0
             json_summary = {
                 "scraped_at": datetime.now().isoformat(),
                 "saved_to_R2_date": self.save_date.strftime('%Y-%m-%d'),
                 "total_categories": len(categories_data),
                 "total_businesses": total_businesses,
                 "total_images": upload_summary["total_images"],
-                "categories": []
+                "categories": [],
+                "request_metrics": {
+                    "requests_total": self.requests_total,
+                    "requests_failed": self.requests_failed,
+                    "error_rate_pct": round(error_rate_pct, 2),
+                    "requests_per_min": round(requests_per_min, 2),
+                    "duration_sec": round(duration_sec, 2),
+                },
             }
             
             for category_data in categories_data:
@@ -405,6 +419,7 @@ async def main():
         
         orchestrator = DalilScraperOrchestrator(bucket_name=bucket_name, profile_name=profile_name)
         await orchestrator.initialize()
+        orchestrator.start_time = time.time()
         
         # Scrape all categories
         categories_data = await orchestrator.scrape_all_categories()

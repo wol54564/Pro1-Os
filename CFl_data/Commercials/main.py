@@ -36,9 +36,11 @@ class CommercialsScraperOrchestrator:
         self.profile_name = profile_name
         self.temp_dir = Path(temp_dir)
         self.temp_dir.mkdir(exist_ok=True)
-        self.save_date = datetime.now()        self.start_time = None
+        self.save_date = datetime.now()
+        self.start_time = None
         self.requests_total = 0
-        self.requests_failed = 0        logger.info(f"Saving to R2 with date: {self.save_date.strftime('%Y-%m-%d')}")
+        self.requests_failed = 0
+        logger.info(f"Saving to R2 with date: {self.save_date.strftime('%Y-%m-%d')}")
         
     async def initialize(self):
         """Initialize the scraper and R2 client"""

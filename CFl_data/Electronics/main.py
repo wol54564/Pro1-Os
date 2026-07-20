@@ -3,6 +3,7 @@ import pandas as pd
 import json
 import logging
 import os
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -421,12 +422,22 @@ class ElectronicsScraperOrchestrator:
             
             # Upload JSON summary
             logger.info("Uploading JSON summary...")
+            duration_sec = time.time() - self.start_time if self.start_time else 0
+            error_rate_pct = (self.requests_failed / self.requests_total * 100.0) if self.requests_total > 0 else 0.0
+            requests_per_min = (self.requests_total / (duration_sec / 60.0)) if duration_sec > 0 else 0.0
             json_summary = {
                 "scraped_at": datetime.now().isoformat(),
                 "saved_to_R2_date": self.save_date.strftime('%Y-%m-%d'),
                 "total_main_categories": len(results),
                 "total_listings": total_listings,
-                "main_categories": []
+                "main_categories": [],
+                "request_metrics": {
+                    "requests_total": self.requests_total,
+                    "requests_failed": self.requests_failed,
+                    "error_rate_pct": round(error_rate_pct, 2),
+                    "requests_per_min": round(requests_per_min, 2),
+                    "duration_sec": round(duration_sec, 2),
+                },
             }
             
             for result in results:
@@ -480,6 +491,7 @@ async def main():
         
         orchestrator = ElectronicsScraperOrchestrator(bucket_name=bucket_name, profile_name=profile_name)
         await orchestrator.initialize()
+        orchestrator.start_time = time.time()
         
         logger.info("\nStarting scraping...")
         results = await orchestrator.scrape_all_main_categories()

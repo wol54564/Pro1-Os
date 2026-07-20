@@ -317,13 +317,23 @@ class CampingScraperOrchestrator:
                     "total_pages_scraped": result["total_pages"]
                 })
             
+            duration_sec = time.time() - self.start_time if self.start_time else 0
+            error_rate_pct = (self.requests_failed / self.requests_total * 100.0) if self.requests_total > 0 else 0.0
+            requests_per_min = (self.requests_total / (duration_sec / 60.0)) if duration_sec > 0 else 0.0
             json_data = {
                 "scraped_at": datetime.now().isoformat(),
                 "data_scraped_date": self.scrape_date.strftime('%Y-%m-%d'),
                 "saved_to_R2_date": self.save_date.strftime('%Y-%m-%d'),
                 "total_subcategories": len(results),
                 "total_listings": total_listings,
-                "subcategories": subcategories_summary
+                "subcategories": subcategories_summary,
+                "request_metrics": {
+                    "requests_total": self.requests_total,
+                    "requests_failed": self.requests_failed,
+                    "error_rate_pct": round(error_rate_pct, 2),
+                    "requests_per_min": round(requests_per_min, 2),
+                    "duration_sec": round(duration_sec, 2),
+                },
             }
             
             with open(json_file, 'w', encoding='utf-8') as f:
@@ -359,6 +369,7 @@ class CampingScraperOrchestrator:
         """Main orchestration method"""
         try:
             await self.initialize()
+            self.start_time = time.time()
             
             logger.info("=" * 80)
             logger.info("CAMPING SCRAPER ORCHESTRATOR")

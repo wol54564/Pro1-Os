@@ -3,6 +3,7 @@ import pandas as pd
 import json
 import logging
 import os
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -40,6 +41,9 @@ class AutomotiveServicesScraperOrchestrator:
         self.max_listings_per_subcategory = max_listings_per_subcategory
         self.scrape_date = datetime.now() - timedelta(days=1)
         self.save_date = datetime.now()
+        self.start_time = None
+        self.requests_total = 0
+        self.requests_failed = 0
         
         logger.info(f"Scraping data for date: {self.scrape_date.strftime('%Y-%m-%d')}")
         logger.info(f"Saving to R2 with date: {self.save_date.strftime('%Y-%m-%d')}")
@@ -358,6 +362,7 @@ class AutomotiveServicesScraperOrchestrator:
         """
         try:
             await self.initialize()
+            self.start_time = time.time()
             
             # Step 1: Fetch subcategories
             logger.info("\n" + "="*60)
@@ -407,6 +412,9 @@ class AutomotiveServicesScraperOrchestrator:
 
             total_listings = sum(len(d.get("listings", [])) for d in all_data)
             logger.info("\nUploading JSON summary...")
+            duration_sec = time.time() - self.start_time if self.start_time else 0
+            error_rate_pct = (self.requests_failed / self.requests_total * 100.0) if self.requests_total > 0 else 0.0
+            requests_per_min = (self.requests_total / (duration_sec / 60.0)) if duration_sec > 0 else 0.0
             json_summary = {
                 "scraped_at": datetime.now().isoformat(),
                 "data_scraped_date": self.scrape_date.strftime('%Y-%m-%d'),
@@ -423,6 +431,13 @@ class AutomotiveServicesScraperOrchestrator:
                     for d in all_data
                     if d.get("listings")
                 ],
+                "request_metrics": {
+                    "requests_total": self.requests_total,
+                    "requests_failed": self.requests_failed,
+                    "error_rate_pct": round(error_rate_pct, 2),
+                    "requests_per_min": round(requests_per_min, 2),
+                    "duration_sec": round(duration_sec, 2),
+                },
             }
             temp_json = self.temp_dir / f"summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
             with open(temp_json, 'w', encoding='utf-8') as f:

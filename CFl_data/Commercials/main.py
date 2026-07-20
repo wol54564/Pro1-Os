@@ -3,6 +3,7 @@ import pandas as pd
 import json
 import logging
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -35,8 +36,9 @@ class CommercialsScraperOrchestrator:
         self.profile_name = profile_name
         self.temp_dir = Path(temp_dir)
         self.temp_dir.mkdir(exist_ok=True)
-        self.save_date = datetime.now()
-        logger.info(f"Saving to R2 with date: {self.save_date.strftime('%Y-%m-%d')}")
+        self.save_date = datetime.now()        self.start_time = None
+        self.requests_total = 0
+        self.requests_failed = 0        logger.info(f"Saving to R2 with date: {self.save_date.strftime('%Y-%m-%d')}")
         
     async def initialize(self):
         """Initialize the scraper and R2 client"""
@@ -89,6 +91,7 @@ class CommercialsScraperOrchestrator:
                 
                 # Get detailed ad information
                 details = await self.scraper.get_ad_details(ad_id)
+                self.requests_total += 1  # Count request for ad details
                 
                 if details:
                     # Download and upload image if available
@@ -101,6 +104,7 @@ class CommercialsScraperOrchestrator:
                         try:
                             # Download image
                             image_data = await self.scraper.download_image(image_url)
+                            self.requests_total += 1  # Count request for image
                             
                             if image_data:
                                 # Upload to R2
@@ -122,6 +126,7 @@ class CommercialsScraperOrchestrator:
                             
                         except Exception as e:
                             logger.warning(f"Failed to download/upload image {image_url}: {e}")
+                            self.requests_failed += 1  # Count failed request
                     
                     # Add R2 image path to details
                     details["R2_image_path"] = R2_image_path
@@ -167,6 +172,7 @@ class CommercialsScraperOrchestrator:
                 
                 # Get ads from this page
                 ads, _ = await self.scraper.get_category_ads(category_slug, page_num)
+                self.requests_total += 1  # Count request for category page
                 
                 if not ads:
                     logger.info(f"No ads found on page {page_num}")
@@ -286,6 +292,7 @@ class CommercialsScraperOrchestrator:
         Main execution method - scrapes all categories and uploads to R2
         """
         try:
+            self.start_time = time.time()
             await self.initialize()
             
             # Get all categories
@@ -293,6 +300,7 @@ class CommercialsScraperOrchestrator:
             logger.info("STEP 1: Fetching Categories")
             logger.info("="*60)
             categories = await self.scraper.get_categories()
+            self.requests_total += 1  # 1 request for categories
             
             if not categories:
                 logger.error("No categories found. Exiting.")
@@ -343,6 +351,12 @@ class CommercialsScraperOrchestrator:
                     logger.info(f"    R2: {result['excel_R2_url']}")
             
             logger.info("\nUploading JSON summary...")
+            
+            # Calculate metrics
+            duration_sec = time.time() - self.start_time
+            error_rate_pct = (self.requests_failed / self.requests_total * 100.0) if self.requests_total > 0 else 0.0
+            requests_per_min = (self.requests_total / (duration_sec / 60.0)) if duration_sec > 0 else 0.0
+            
             json_summary = {
                 "scraped_at": datetime.now().isoformat(),
                 "saved_to_s3_date": self.save_date.strftime('%Y-%m-%d'),
@@ -357,6 +371,13 @@ class CommercialsScraperOrchestrator:
                     for r in results
                     if r["total_ads"] > 0
                 ],
+                "request_metrics": {
+                    "requests_total": self.requests_total,
+                    "requests_failed": self.requests_failed,
+                    "error_rate_pct": round(error_rate_pct, 2),
+                    "requests_per_min": round(requests_per_min, 2),
+                    "duration_sec": round(duration_sec, 2),
+                },
             }
             temp_json = self.temp_dir / f"summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
             with open(temp_json, 'w', encoding='utf-8') as f:

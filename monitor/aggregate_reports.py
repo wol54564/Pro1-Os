@@ -51,6 +51,37 @@ logging.basicConfig(
 log = logging.getLogger("monitor-hub")
 
 
+AUTOMOTIVE_FOLDER_NAMES = frozenset({
+    "Automotive-Cars-and-Trucks",
+    "Rest-Automotive-Part1",
+    "Rest-Automotive-Part2",
+    "Rest-Automotive-Part3",
+    "Wanted-Cars",
+    "bikes",
+})
+
+
+def _automotive_display_name(site: Dict, report: Optional[Dict]) -> Optional[str]:
+    """Normalize selected folders to '<name> (automotive)' labels for hub UI/tables."""
+    folder = str(site.get("folder") or "").strip()
+    raw_name = (
+        (report or {}).get("display_name")
+        or site.get("display_name")
+        or folder
+        or None
+    )
+    if raw_name is None:
+        return None
+
+    label = str(raw_name).strip()
+    if folder not in AUTOMOTIVE_FOLDER_NAMES:
+        return label
+
+    if label.lower().endswith("(automotive)"):
+        return label
+    return f"{label.lower()} (automotive)"
+
+
 def _scraper_results(report: Dict) -> List[Dict]:
     """Normalize scrapers field — dict (Pro1-Os) or list (other repos)."""
     scrapers = report.get("scrapers", {})
@@ -134,10 +165,12 @@ def summarize_site(
     report_partition_date: str,
     report_fallback: bool,
 ) -> Dict:
+    display_name = _automotive_display_name(site, report)
+
     base = {
         "folder":       site.get("folder"),
         "site_id":      site.get("site_id"),
-        "display_name": site.get("display_name"),
+        "display_name": display_name,
         "website":      site.get("website"),
         "country":      site.get("country"),
         "repo":         site.get("repo"),
@@ -177,7 +210,7 @@ def summarize_site(
 
     return {
         **base,
-        "display_name":    report.get("display_name") or site.get("display_name"),
+        "display_name":    display_name,
         "website":         report.get("website") or site.get("website"),
         "country":         report.get("country") or site.get("country"),
         "repo":            report.get("repo") or site.get("repo"),

@@ -356,8 +356,11 @@ class CommercialsScraperOrchestrator:
             
             # Calculate metrics
             duration_sec = time.time() - self.start_time
-            error_rate_pct = (self.requests_failed / self.requests_total * 100.0) if self.requests_total > 0 else 0.0
-            requests_per_min = (self.requests_total / (duration_sec / 60.0)) if duration_sec > 0 else 0.0
+            session_requests_total = int(getattr(getattr(self.scraper, "session", None), "request_count", 0) or 0)
+            effective_requests_total = max(getattr(self, "requests_total", 0), session_requests_total)
+            effective_requests_failed = getattr(self, "requests_failed", 0)
+            error_rate_pct = (effective_requests_failed / effective_requests_total * 100.0) if effective_requests_total > 0 else 0.0
+            requests_per_min = (effective_requests_total / (duration_sec / 60.0)) if duration_sec > 0 else 0.0
             
             json_summary = {
                 "scraped_at": datetime.now().isoformat(),
@@ -374,8 +377,8 @@ class CommercialsScraperOrchestrator:
                     if r["total_ads"] > 0
                 ],
                 "request_metrics": {
-                    "requests_total": self.requests_total,
-                    "requests_failed": self.requests_failed,
+                    "requests_total": effective_requests_total,
+                    "requests_failed": effective_requests_failed,
                     "error_rate_pct": round(error_rate_pct, 2),
                     "requests_per_min": round(requests_per_min, 2),
                     "duration_sec": round(duration_sec, 2),
@@ -424,3 +427,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+

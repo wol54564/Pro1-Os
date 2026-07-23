@@ -303,8 +303,10 @@ async def main():
         # Create and upload JSON summary
         logger.info("\nUploading JSON summary...")
         duration_sec = time.time() - start_time
-        error_rate_pct = 0.0  # No request tracking in this module
-        requests_per_min = 0.0
+        requests_total = int(getattr(SESSION, "request_count", 0) or 0)
+        requests_failed = 0
+        error_rate_pct = (requests_failed / requests_total * 100.0) if requests_total > 0 else 0.0
+        requests_per_min = (requests_total / (duration_sec / 60.0)) if duration_sec > 0 else 0.0
         
         json_summary = {
             "scraped_at": datetime.now().isoformat(),
@@ -315,8 +317,8 @@ async def main():
             "total_sheets": total_sheets,
             "subcategories": results,
             "request_metrics": {
-                "requests_total": 0,
-                "requests_failed": 0,
+                "requests_total": requests_total,
+                "requests_failed": requests_failed,
                 "error_rate_pct": round(error_rate_pct, 2),
                 "requests_per_min": round(requests_per_min, 2),
                 "duration_sec": round(duration_sec, 2),

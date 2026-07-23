@@ -1573,9 +1573,13 @@ def main():
     full_report["error_summary"] = error_summary
 
     validation_passed = all(r["all_passed"] for r in all_results) and bool(all_results)
-    full_report["github_run"] = build_scraper_run_meta(
-        site, report_date_str, run_started_at, validation_passed
-    )
+    github_run = build_scraper_run_meta(site, report_date_str, run_started_at, validation_passed)
+    github_gmail = (site.get("github_gmail") or site.get("github_email") or "").strip()
+    if github_gmail:
+        github_run["github_gmail"] = github_gmail
+    full_report["github_run"] = github_run
+    if github_gmail:
+        full_report["github_gmail"] = github_gmail
     full_report["run_place"] = full_report["github_run"].get("run_place")
 
     print_summary_table(all_results, error_summary)

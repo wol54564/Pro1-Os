@@ -310,6 +310,22 @@ class OthersScraperOrchestrator:
                             "R2_url": R2_url
                         })
                         logger.info(f"[OK] Uploaded: {subcat_slug}.xlsx ({listings_count} listings)")
+
+                    temp_json_version = self.temp_dir / f"{subcat_slug}_temp.json"
+                    with open(temp_json_version, 'w', encoding='utf-8') as jf:
+                        json.dump(result["listings"], jf, ensure_ascii=False, indent=2)
+
+                    R2_json_version_path = await asyncio.to_thread(
+                        self.R2_helper.upload_file,
+                        str(temp_json_version),
+                        f"json version/{subcat_slug}.json",
+                        self.save_date,
+                        retries=3
+                    )
+                    if R2_json_version_path:
+                        upload_summary["json_files"].append(R2_json_version_path)
+                        logger.info(f"[OK] Uploaded JSON version: {subcat_slug}.json")
+                    temp_json_version.unlink(missing_ok=True)
                     
                     temp_excel.unlink(missing_ok=True)
             

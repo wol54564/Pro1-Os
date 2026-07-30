@@ -302,6 +302,30 @@ class SportScraperOrchestrator:
                     "R2_url": R2_url
                 })
                 logger.info(f"[OK] Uploaded: sport.xlsx ({total_listings} listings across {len(results)} subcategories)")
+
+            json_version_payload = [
+                {
+                    "subcategory": result["subcategory"],
+                    "listings": result["listings"],
+                }
+                for result in results
+                if result["listings"]
+            ]
+            json_version_file = self.temp_dir / "sport_json_version_temp.json"
+            with open(json_version_file, 'w', encoding='utf-8') as jf:
+                json.dump(json_version_payload, jf, ensure_ascii=False, indent=2)
+
+            R2_json_version_path = await asyncio.to_thread(
+                self.R2_helper.upload_file,
+                str(json_version_file),
+                f"json version/sport.json",
+                self.save_date,
+                retries=3
+            )
+            if R2_json_version_path:
+                upload_summary["json_files"].append(R2_json_version_path)
+                logger.info("[OK] Uploaded JSON version: sport.json")
+            json_version_file.unlink(missing_ok=True)
             
             temp_excel.unlink(missing_ok=True)
             

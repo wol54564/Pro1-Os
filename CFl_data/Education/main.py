@@ -454,6 +454,30 @@ class EducationScraperOrchestrator:
                             "R2_url": R2_url
                         })
                         logger.info(f"[OK] Uploaded: {excel_filename} ({listings_count} listings)")
+
+                    if result["has_children"]:
+                        json_version_payload = {
+                            child_result["child_category"]["slug"]: child_result["listings"]
+                            for child_result in result["children"]
+                            if child_result["listings"]
+                        }
+                    else:
+                        json_version_payload = result["listings"]
+                    temp_json_version = self.temp_dir / f"{safe_filename}_temp.json"
+                    with open(temp_json_version, 'w', encoding='utf-8') as jf:
+                        json.dump(json_version_payload, jf, ensure_ascii=False, indent=2)
+
+                    R2_json_version_path = await asyncio.to_thread(
+                        self.R2_helper.upload_file,
+                        str(temp_json_version),
+                        f"json version/{safe_filename}.json",
+                        self.save_date,
+                        retries=3
+                    )
+                    if R2_json_version_path:
+                        upload_summary["json_files"].append(R2_json_version_path)
+                        logger.info(f"[OK] Uploaded JSON version: {safe_filename}.json")
+                    temp_json_version.unlink(missing_ok=True)
                     
                     temp_excel.unlink(missing_ok=True)
             

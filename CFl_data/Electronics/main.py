@@ -417,6 +417,33 @@ class ElectronicsScraperOrchestrator:
                         "R2_url": R2_url
                     })
                     logger.info(f"[OK] Uploaded: {main_cat_slug}.xlsx ({result.get('total_listings')} listings across {len(result.get('children', []))} sheets)")
+
+                json_version_payload = {
+                    "main_category": result.get("main_category", {}),
+                    "structure_type": result.get("structure_type"),
+                    "children": [
+                        {
+                            "child": child_result.get("child", {}),
+                            "listings": child_result.get("listings", []),
+                        }
+                        for child_result in result.get("children", [])
+                        if child_result.get("listings")
+                    ],
+                }
+                temp_json_version = self.temp_dir / f"{main_cat_slug}_temp.json"
+                with open(temp_json_version, 'w', encoding='utf-8') as jf:
+                    json.dump(json_version_payload, jf, ensure_ascii=False, indent=2)
+
+                R2_json_version_path = await asyncio.to_thread(
+                    self.R2_helper.upload_file,
+                    str(temp_json_version),
+                    f"json version/{main_cat_slug}.json",
+                    self.save_date
+                )
+                if R2_json_version_path:
+                    upload_summary["json_files"].append(R2_json_version_path)
+                    logger.info(f"[OK] Uploaded JSON version: {main_cat_slug}.json")
+                temp_json_version.unlink(missing_ok=True)
                 
                 temp_excel.unlink(missing_ok=True)
             

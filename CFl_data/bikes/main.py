@@ -426,6 +426,30 @@ class BikesScraperOrchestrator:
                         "R2_url": R2_url
                     })
                     logger.info(f"[OK] Uploaded: {subcat_slug}.xlsx ({subcat_listings_count} listings)")
+
+                if result["direct_listings"]:
+                    json_version_payload = result["direct_listings"]["listings"]
+                else:
+                    json_version_payload = {
+                        child_data["cat_child"]["slug"]: child_data["listings_data"]["listings"]
+                        for child_data in result["cat_childs_data"]
+                        if child_data["listings_data"]["listings"]
+                    }
+                json_version_file = self.temp_dir / f"{subcat_slug}_json_version_temp.json"
+                with open(json_version_file, 'w', encoding='utf-8') as jf:
+                    json.dump(json_version_payload, jf, ensure_ascii=False, indent=2)
+
+                R2_json_version_path = await asyncio.to_thread(
+                    self.R2_helper.upload_file,
+                    str(json_version_file),
+                    f"json version/{subcat_slug}.json",
+                    self.save_date,
+                    retries=3
+                )
+                if R2_json_version_path:
+                    upload_summary["json_files"].append(R2_json_version_path)
+                    logger.info(f"[OK] Uploaded JSON version: {subcat_slug}.json")
+                json_version_file.unlink(missing_ok=True)
                 
                 temp_excel.unlink(missing_ok=True)
             

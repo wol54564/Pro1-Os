@@ -373,6 +373,33 @@ class JobsScraperOrchestrator:
                         "R2_url": R2_url
                     })
                     logger.info(f"[OK] Uploaded: {excel_filename} ({result['total_listings']} listings across {len(result['child_categories'])} child categories)")
+
+                json_version_payload = {
+                    "main_subcategory": result.get("main_subcategory", {}),
+                    "child_categories": [
+                        {
+                            "child_category": child_result.get("child_category", {}),
+                            "listings": child_result.get("listings", []),
+                        }
+                        for child_result in result.get("child_categories", [])
+                        if child_result.get("listings")
+                    ],
+                }
+                json_version_file = self.temp_dir / f"{main_subcat_slug}_json_version_temp.json"
+                with open(json_version_file, 'w', encoding='utf-8') as jf:
+                    json.dump(json_version_payload, jf, ensure_ascii=False, indent=2)
+
+                R2_json_version_path = await asyncio.to_thread(
+                    self.R2_helper.upload_file,
+                    str(json_version_file),
+                    f"json version/{main_subcat_slug}.json",
+                    self.save_date,
+                    retries=3
+                )
+                if R2_json_version_path:
+                    upload_summary["json_files"].append(R2_json_version_path)
+                    logger.info(f"[OK] Uploaded JSON version: {main_subcat_slug}.json")
+                json_version_file.unlink(missing_ok=True)
                 
                 temp_excel.unlink(missing_ok=True)
             

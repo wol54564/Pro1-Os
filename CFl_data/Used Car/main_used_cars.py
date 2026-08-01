@@ -414,6 +414,34 @@ class UsedCarsScraperOrchestrator:
                             R2_excel_key,
                             self.save_date
                         )
+
+                        json_payload = {
+                            "category": {
+                                "name_en": category.get("name_en"),
+                                "name_ar": category.get("name_ar"),
+                                "slug": category.get("slug"),
+                            },
+                            "subcategories": [
+                                {
+                                    "slug": sub_slug,
+                                    "listings": listings,
+                                }
+                                for sub_slug, listings in category_data.items()
+                                if listings
+                            ],
+                        }
+                        temp_json_version = self.temp_dir / f"{category['name_en']}_json_version.json"
+                        with open(temp_json_version, 'w', encoding='utf-8') as jf:
+                            json.dump(json_payload, jf, ensure_ascii=False, indent=2)
+                        R2_json_version_key = f"json version/{category['name_en']}.json"
+                        R2_json_version_path = self.R2_helper.upload_file(
+                            str(temp_json_version),
+                            R2_json_version_key,
+                            self.save_date
+                        )
+                        if R2_json_version_path:
+                            logger.info(f"[OK] Uploaded JSON version: {R2_json_version_path}")
+                        temp_json_version.unlink(missing_ok=True)
                         
                         if R2_path:
                             logger.info(f"[OK] Uploaded to R2: {R2_path}")

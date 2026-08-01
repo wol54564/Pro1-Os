@@ -266,6 +266,17 @@ async def scrape_subcategory(subcat):
     with open(temp_file, "rb") as f:
         await R2.upload_fileobj(f, excel_path)
 
+    json_version_path = f"4sale-data/property/year={YEAR}/month={MONTH}/day={DAY}/json version/{slug}.json"
+    temp_json_version = f"temp_{slug}.json"
+    with open(temp_json_version, 'w', encoding='utf-8') as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
+
+    with open(temp_json_version, 'rb') as f:
+        await R2.upload_fileobj(f, json_version_path)
+    logger.info(f"[OK] {slug} JSON version uploaded to {json_version_path}")
+
+    os.remove(temp_json_version)
+
     sheets_count = len(set(r["sheet"] for r in results))
     logger.info(f"[OK] {slug} saved to R2 with {sheets_count} sheets")
     

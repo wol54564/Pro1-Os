@@ -327,12 +327,30 @@ class CommercialsScraperOrchestrator:
                 R2_url = None
                 if excel_path:
                     R2_url = await self.upload_excel_to_R2(excel_path, category["slug"])
+
+                R2_json_version_url = None
+                if category_data["ads"]:
+                    json_filename = f"commercials_{category['slug']}.json"
+                    json_filepath = self.temp_dir / json_filename
+                    with open(json_filepath, 'w', encoding='utf-8') as jf:
+                        json.dump(category_data["ads"], jf, ensure_ascii=False, indent=2)
+                    R2_json_version_url = await asyncio.to_thread(
+                        self.R2_helper.upload_file,
+                        str(json_filepath),
+                        json_filename,
+                        self.save_date,
+                        'json version'
+                    )
+                    json_filepath.unlink(missing_ok=True)
+                    if R2_json_version_url:
+                        logger.info(f"[OK] Uploaded JSON version: {json_filename}")
                 
                 results.append({
                     "category": category["name"],
                     "slug": category["slug"],
                     "total_ads": category_data["total_ads"],
-                    "excel_R2_url": R2_url
+                    "excel_R2_url": R2_url,
+                    "json_version_R2_path": R2_json_version_url,
                 })
                 
                 logger.info(f"\n[OK] Completed: {category['name']} - {category_data['total_ads']} ads")

@@ -462,6 +462,29 @@ class FurnitureScraperOrchestrator:
             if R2_excel_path:
                 R2_url = self.R2_helper.generate_R2_url(R2_excel_path)
                 logger.info(f"[OK] Uploaded: {safe_filename}.xlsx ({result['total_listings']} listings)")
+
+                json_version_payload = {
+                    "subcategory": result.get("subcategory", {}),
+                    "main_listings": result.get("main_listings", []),
+                    "district_data": result.get("district_data", []),
+                    "catchild_data": result.get("catchild_data", []),
+                    "listings": result.get("listings", []),
+                    "total_listings": result.get("total_listings", 0),
+                }
+                temp_json_version = self.temp_dir / f"{safe_filename}_temp.json"
+                with open(temp_json_version, 'w', encoding='utf-8') as jf:
+                    json.dump(json_version_payload, jf, ensure_ascii=False, indent=2)
+
+                R2_json_version_path = await asyncio.to_thread(
+                    self.R2_helper.upload_file,
+                    str(temp_json_version),
+                    f"json version/{safe_filename}.json",
+                    self.save_date,
+                    retries=3
+                )
+                if R2_json_version_path:
+                    logger.info(f"[OK] Uploaded JSON version: {safe_filename}.json")
+                temp_json_version.unlink(missing_ok=True)
                 
                 temp_excel.unlink(missing_ok=True)
                 
@@ -471,7 +494,8 @@ class FurnitureScraperOrchestrator:
                     "filename": f"{safe_filename}.xlsx",
                     "total_listings": result["total_listings"],
                     "R2_path": R2_excel_path,
-                    "R2_url": R2_url
+                    "R2_url": R2_url,
+                    "json_R2_path": R2_json_version_path,
                 }
             
             temp_excel.unlink(missing_ok=True)

@@ -414,6 +414,34 @@ class RestAutomotiveScraperOrchestrator:
                     "R2_url": R2_url
                 }
                 logger.info(f"[OK] Uploaded: {excel_filename} ({total_listings} listings across {len(results)} subcategories/businesses)")
+
+            json_version_payload = {
+                "category": category_type,
+                "items": [
+                    {
+                        "business": result.get("business"),
+                        "subcategory": result.get("subcategory"),
+                        "listings": result.get("listings", []),
+                    }
+                    for result in results
+                    if result.get("listings")
+                ],
+            }
+            temp_json_version = self.temp_dir / f"{category_type}_json_version_temp.json"
+            with open(temp_json_version, 'w', encoding='utf-8') as jf:
+                json.dump(json_version_payload, jf, ensure_ascii=False, indent=2)
+
+            R2_json_version_path = await asyncio.to_thread(
+                self.R2_helper.upload_file,
+                str(temp_json_version),
+                f"json version/{category_type}.json",
+                self.save_date,
+                retries=3
+            )
+            if R2_json_version_path:
+                upload_summary["json_file"] = R2_json_version_path
+                logger.info(f"[OK] Uploaded JSON version: {category_type}.json")
+            temp_json_version.unlink(missing_ok=True)
             
             temp_excel.unlink(missing_ok=True)
             

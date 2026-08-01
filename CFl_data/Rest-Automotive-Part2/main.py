@@ -410,6 +410,29 @@ class AutomotiveServicesScraperOrchestrator:
             
             await self.upload_excel_to_R2(excel_path)
 
+            json_version_payload = {
+                "subcategories": [
+                    {
+                        "subcategory": d.get("subcategory", {}),
+                        "listings": d.get("listings", []),
+                    }
+                    for d in all_data
+                    if d.get("listings")
+                ]
+            }
+            temp_json_version = self.temp_dir / "automotive-services_json_version.json"
+            with open(temp_json_version, 'w', encoding='utf-8') as jf:
+                json.dump(json_version_payload, jf, ensure_ascii=False, indent=2)
+            R2_json_version_path = await asyncio.to_thread(
+                self.R2_helper.upload_file,
+                str(temp_json_version),
+                "json version/automotive-services.json",
+                self.save_date
+            )
+            if R2_json_version_path:
+                logger.info("[OK] Uploaded JSON version: automotive-services.json")
+            temp_json_version.unlink(missing_ok=True)
+
             total_listings = sum(len(d.get("listings", [])) for d in all_data)
             logger.info("\nUploading JSON summary...")
             duration_sec = time.time() - self.start_time if self.start_time else 0

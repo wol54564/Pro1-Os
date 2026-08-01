@@ -177,6 +177,19 @@ class MainScraper:
                 # Upload excel to R2
                 await self.upload_bytes_to_R2(output.read(), f"{R2_prefix}{excel_name}")
 
+                json_prefix = (
+                    f"4sale-data/new-cars/year={today.year}/month={today.month}/day={today.day}/json version/"
+                )
+                json_name = f"{brand_name}.json"
+                json_payload = {
+                    "brand": brand_name,
+                    "types": all_car_details,
+                }
+                await self.upload_bytes_to_R2(
+                    json.dumps(json_payload, ensure_ascii=False, indent=2).encode("utf-8"),
+                    f"{json_prefix}{json_name}"
+                )
+
     async def scrape_and_save(self):
         scraper = CarScraper(self.url)
         brand_data = await scraper.scrape_brands_and_types()

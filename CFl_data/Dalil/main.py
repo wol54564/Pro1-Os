@@ -343,6 +343,23 @@ class DalilScraperOrchestrator:
                     "R2_url": self.R2_helper.generate_R2_url(R2_excel_path)
                 }
                 logger.info(f"[OK] Uploaded Excel file: {R2_excel_path}")
+
+            temp_json_version = self.temp_dir / "dalil_directory_json_version.json"
+            with open(temp_json_version, 'w', encoding='utf-8') as jf:
+                json.dump(categories_data, jf, ensure_ascii=False, indent=2)
+            R2_json_version_path = await asyncio.to_thread(
+                self.R2_helper.upload_file,
+                str(temp_json_version),
+                "json version/dalil_directory.json",
+                self.save_date
+            )
+            if R2_json_version_path:
+                upload_summary["json_version"] = {
+                    "R2_path": R2_json_version_path,
+                    "R2_url": self.R2_helper.generate_R2_url(R2_json_version_path)
+                }
+                logger.info(f"[OK] Uploaded JSON version: {R2_json_version_path}")
+            temp_json_version.unlink(missing_ok=True)
             
             excel_file.unlink(missing_ok=True)
             

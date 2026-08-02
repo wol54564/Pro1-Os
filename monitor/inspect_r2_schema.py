@@ -61,7 +61,7 @@ from request_metrics import (
     build_run_error_summary,
     count_scraper_request_metrics,
 )
-from r2_file_counter import count_scraper_r2_files, count_site_r2_files
+from r2_file_counter import count_scraper_r2_inventory, count_site_r2_inventory
 from github_workflows import build_scraper_run_meta, merge_registry_site
 from monitor_r2 import (
     build_r2_client,
@@ -1115,6 +1115,19 @@ def _fmt_rpm(value: Optional[float]) -> str:
     return f"{value:.1f}"
 
 
+def _fmt_size_bytes(size_bytes: Optional[int]) -> str:
+    if size_bytes is None:
+        return "—"
+    value = float(size_bytes)
+    if value < 1024:
+        return f"{int(value)} B"
+    if value < 1024 ** 2:
+        return f"{value / 1024:.1f} KB"
+    if value < 1024 ** 3:
+        return f"{value / (1024 ** 2):.1f} MB"
+    return f"{value / (1024 ** 3):.2f} GB"
+
+
 def print_summary_table(results: List[Dict], error_summary: Optional[Dict] = None) -> None:
     """Print a human-readable table to stdout."""
     print("\n" + "=" * 112)
@@ -1142,10 +1155,11 @@ def print_summary_table(results: List[Dict], error_summary: Optional[Dict] = Non
     total_pass = sum(1 for r in results if r["all_passed"])
     total_ads = sum(r.get("unique_ads") or 0 for r in results)
     total_r2 = sum(r.get("r2_file_count") or 0 for r in results)
+    total_r2_size_bytes = sum(r.get("r2_size_bytes") or 0 for r in results)
     site_metrics = aggregate_site_request_metrics(results)
     print(
         f"\nTotal: {total_pass}/{len(results)} scrapers fully passed · "
-        f"{total_ads} unique ads · {total_r2} R2 objects"
+        f"{total_ads} unique ads · {total_r2} R2 objects · {_fmt_size_bytes(total_r2_size_bytes)}"
     )
     if site_metrics.get("requests_total"):
         print(
@@ -1380,6 +1394,7 @@ def main():
             "scraper":        scraper_name,
             "files_found":    0,
             "r2_file_count":  0,
+            "r2_size_bytes":  0,
             "checks_passed":  0,
             "checks_total":   0,
             "all_passed":     True,
@@ -1391,7 +1406,9 @@ def main():
             "date_published_hour_counts": {},
         }
 
-        scraper_result["r2_file_count"] = count_scraper_r2_files(r2_client, bucket, r2_base)
+        scraper_r2_inventory = count_scraper_r2_inventory(r2_client, bucket, r2_base)
+        scraper_result["r2_file_count"] = scraper_r2_inventory["objects"]
+        scraper_result["r2_size_bytes"] = scraper_r2_inventory["size_bytes"]
 
         all_xlsx: List[Dict] = []
         excel_downloads: List[tuple] = []
@@ -1541,6 +1558,7 @@ def main():
             f"  {status} {scraper_name}: "
             f"{scraper_result['files_found']} file(s) today, "
             f"{scraper_result['r2_file_count']} R2 object(s) total, "
+            f"{_fmt_size_bytes(scraper_result['r2_size_bytes'])} total size, "
             f"{scraper_result['checks_passed']}/{scraper_result['checks_total']} checks, "
             f"{scraper_result['unique_ads']} unique ads ({scraper_result['ads_source']})"
             f"{metrics_note}"
@@ -1559,9 +1577,12 @@ def main():
 
     site_r2_prefix = site.get("r2_prefix", "").strip("/")
     if site_r2_prefix:
-        full_report["total_r2_files"] = count_site_r2_files(r2_client, bucket, site_r2_prefix)
+        site_r2_inventory = count_site_r2_inventory(r2_client, bucket, site_r2_prefix)
+        full_report["total_r2_files"] = site_r2_inventory["objects"]
+        full_report["total_r2_size_bytes"] = site_r2_inventory["size_bytes"]
     else:
         full_report["total_r2_files"] = sum(r.get("r2_file_count") or 0 for r in all_results)
+        full_report["total_r2_size_bytes"] = sum(r.get("r2_size_bytes") or 0 for r in all_results)
 
     alerts = collect_alerts(all_results, listing_date_str)
     full_report["alerts"] = alerts

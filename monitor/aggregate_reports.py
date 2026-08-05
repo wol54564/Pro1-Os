@@ -278,10 +278,31 @@ def summarize_site(
         }
 
     results = _scraper_results(report)
-    total   = len(results)
-    passed  = sum(1 for s in results if s.get("all_passed"))
+    reported_total = len(results)
+    expected_total = _to_int(site.get("scrapers")) or reported_total
+    total = reported_total if reported_total > 0 else expected_total
+
+    requests_total, requests_failed, error_rate_pct, requests_per_min = _extract_request_metrics(report, results)
+
+    passed = sum(1 for s in results if s.get("all_passed"))
+    if reported_total == 0 and total > 0:
+        # Summary-only site reports may omit per-scraper blocks entirely.
+        overall_pass = report.get("overall_pass")
+        if overall_pass is False:
+            passed = 0
+        elif requests_total is not None or report.get("total_ads") is not None:
+            passed = total
+
     alerts  = report.get("alert_count", len(report.get("alerts", [])))
     unique_ads = report.get("total_unique_ads")
+    if unique_ads is None:
+        unique_ads = _to_int(report.get("total_ads"))
+    if unique_ads is None and isinstance(report.get("categories"), list):
+        unique_ads = sum(
+            _to_int(c.get("total_ads")) or 0
+            for c in report.get("categories", [])
+            if isinstance(c, dict)
+        )
     if unique_ads is None:
         unique_ads = sum(s.get("unique_ads") or 0 for s in results)
     unique_phones = report.get("total_unique_phones")
@@ -294,9 +315,7 @@ def summarize_site(
     if r2_size_bytes is None:
         r2_size_bytes = sum(s.get("r2_size_bytes") or 0 for s in results)
 
-    requests_total, requests_failed, error_rate_pct, requests_per_min = _extract_request_metrics(report, results)
-
-    scrapers_failed = sum(1 for s in results if not s.get("all_passed"))
+    scrapers_failed = max(total - passed, 0)
 
     return {
         **base,

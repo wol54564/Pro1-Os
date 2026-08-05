@@ -205,6 +205,20 @@ def _status_to_workflow_status(site_status: Optional[str]) -> Optional[str]:
     return None
 
 
+def _to_int(value: Any) -> Optional[int]:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_float(value: Any) -> Optional[float]:
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _duration_from_github_run(github_run: Dict) -> Optional[int]:
     """
     Return scraper pipeline duration.
@@ -378,10 +392,26 @@ def _site_request_fields(report: Dict, site: Dict) -> Dict[str, Any]:
     results = _scraper_entries(report)
     scrapers_failed = sum(1 for _, sr in results if not sr.get("all_passed"))
 
-    requests_total = report.get("requests_total")
-    requests_failed = report.get("requests_failed")
-    error_rate_pct = report.get("error_rate_pct")
-    requests_per_min = report.get("requests_per_min")
+    requests_total = _to_int(report.get("requests_total"))
+    requests_failed = _to_int(report.get("requests_failed"))
+    error_rate_pct = _to_float(report.get("error_rate_pct"))
+    requests_per_min = _to_float(report.get("requests_per_min"))
+
+    if requests_total is None:
+        request_metrics = report.get("request_metrics")
+        if isinstance(request_metrics, dict):
+            requests_total = _to_int(request_metrics.get("requests_total"))
+            requests_failed = _to_int(request_metrics.get("requests_failed"))
+            error_rate_pct = _to_float(request_metrics.get("error_rate_pct"))
+            requests_per_min = _to_float(request_metrics.get("requests_per_min"))
+
+    if requests_total is None:
+        http = ((report.get("error_summary") or {}).get("http"))
+        if isinstance(http, dict):
+            requests_total = _to_int(http.get("requests_total"))
+            requests_failed = _to_int(http.get("requests_failed"))
+            error_rate_pct = _to_float(http.get("error_rate_pct"))
+            requests_per_min = _to_float(http.get("requests_per_min"))
 
     if requests_total is None and results:
         total = 0
@@ -389,15 +419,15 @@ def _site_request_fields(report: Dict, site: Dict) -> Dict[str, Any]:
         rpm_values = []
         found = False
         for _, sr in results:
-            rt = sr.get("requests_total")
+            rt = _to_int(sr.get("requests_total"))
             if rt is None:
                 continue
             found = True
-            total += int(rt)
-            failed += int(sr.get("requests_failed") or 0)
-            rpm = sr.get("requests_per_min")
+            total += rt
+            failed += _to_int(sr.get("requests_failed")) or 0
+            rpm = _to_float(sr.get("requests_per_min"))
             if rpm is not None:
-                rpm_values.append(float(rpm))
+                rpm_values.append(rpm)
         if found:
             requests_total = total
             requests_failed = failed
@@ -405,6 +435,11 @@ def _site_request_fields(report: Dict, site: Dict) -> Dict[str, Any]:
                 error_rate_pct = round(failed / total * 100.0, 2)
             if rpm_values:
                 requests_per_min = round(sum(rpm_values) / len(rpm_values), 2)
+
+    if requests_total is not None and requests_failed is None:
+        requests_failed = 0
+    if requests_total is not None and requests_total > 0 and error_rate_pct is None and requests_failed is not None:
+        error_rate_pct = round(requests_failed / requests_total * 100.0, 2)
 
     return {
         "requests_total": requests_total,

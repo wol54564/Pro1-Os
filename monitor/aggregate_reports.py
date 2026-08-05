@@ -105,6 +105,77 @@ def _scraper_results(report: Dict) -> List[Dict]:
     return []
 
 
+def _to_int(value: object) -> Optional[int]:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_float(value: object) -> Optional[float]:
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_request_metrics(report: Dict, results: List[Dict]) -> Tuple[Optional[int], Optional[int], Optional[float], Optional[float]]:
+    """Extract HTTP metrics from all known report shapes."""
+    requests_total = _to_int(report.get("requests_total"))
+    requests_failed = _to_int(report.get("requests_failed"))
+    error_rate_pct = _to_float(report.get("error_rate_pct"))
+    requests_per_min = _to_float(report.get("requests_per_min"))
+
+    # Flattened shape used by some monitor reports.
+    if requests_total is None:
+        request_metrics = report.get("request_metrics")
+        if isinstance(request_metrics, dict):
+            requests_total = _to_int(request_metrics.get("requests_total"))
+            requests_failed = _to_int(request_metrics.get("requests_failed"))
+            error_rate_pct = _to_float(request_metrics.get("error_rate_pct"))
+            requests_per_min = _to_float(request_metrics.get("requests_per_min"))
+
+    # report_schema_version=2 shape uses error_summary.http.
+    if requests_total is None:
+        http = ((report.get("error_summary") or {}).get("http"))
+        if isinstance(http, dict):
+            requests_total = _to_int(http.get("requests_total"))
+            requests_failed = _to_int(http.get("requests_failed"))
+            error_rate_pct = _to_float(http.get("error_rate_pct"))
+            requests_per_min = _to_float(http.get("requests_per_min"))
+
+    # Legacy fallback: aggregate from scraper-level metrics.
+    if requests_total is None and results:
+        total = 0
+        failed = 0
+        rpm_values: List[float] = []
+        found = False
+        for sr in results:
+            rt = _to_int(sr.get("requests_total"))
+            if rt is None:
+                continue
+            found = True
+            total += rt
+            failed += _to_int(sr.get("requests_failed")) or 0
+            rpm = _to_float(sr.get("requests_per_min"))
+            if rpm is not None:
+                rpm_values.append(rpm)
+        if found:
+            requests_total = total
+            requests_failed = failed
+            if total > 0:
+                error_rate_pct = round(failed / total * 100.0, 2)
+            if rpm_values:
+                requests_per_min = round(sum(rpm_values) / len(rpm_values), 2)
+
+    if requests_total is not None and requests_failed is None:
+        requests_failed = 0
+    if requests_total is not None and requests_total > 0 and error_rate_pct is None and requests_failed is not None:
+        error_rate_pct = round(requests_failed / requests_total * 100.0, 2)
+
+    return requests_total, requests_failed, error_rate_pct, requests_per_min
+
+
 def _load_report_at_key(client, bucket: str, key: str) -> Dict:
     resp = client.get_object(Bucket=bucket, Key=key)
     return json.loads(resp["Body"].read().decode("utf-8"))
@@ -223,6 +294,8 @@ def summarize_site(
     if r2_size_bytes is None:
         r2_size_bytes = sum(s.get("r2_size_bytes") or 0 for s in results)
 
+    requests_total, requests_failed, error_rate_pct, requests_per_min = _extract_request_metrics(report, results)
+
     scrapers_failed = sum(1 for s in results if not s.get("all_passed"))
 
     return {
@@ -242,10 +315,10 @@ def summarize_site(
         "unique_phones":   unique_phones,
         "r2_file_count":   r2_file_count,
         "r2_size_bytes":   r2_size_bytes,
-        "requests_total":  report.get("requests_total"),
-        "requests_failed": report.get("requests_failed"),
-        "error_rate_pct":  report.get("error_rate_pct"),
-        "requests_per_min": report.get("requests_per_min"),
+        "requests_total":  requests_total,
+        "requests_failed": requests_failed,
+        "error_rate_pct":  error_rate_pct,
+        "requests_per_min": requests_per_min,
         "report":          report,
     }
 

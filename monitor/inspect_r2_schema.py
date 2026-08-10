@@ -61,7 +61,11 @@ from request_metrics import (
     build_run_error_summary,
     count_scraper_request_metrics,
 )
-from r2_file_counter import count_scraper_r2_inventory, count_site_r2_inventory
+from r2_file_counter import (
+    count_daily_r2_inventory,
+    count_scraper_r2_inventory,
+    count_site_r2_inventory,
+)
 from github_workflows import build_scraper_run_meta, merge_registry_site
 from monitor_r2 import (
     build_r2_client,
@@ -1395,6 +1399,7 @@ def main():
             "files_found":    0,
             "r2_file_count":  0,
             "r2_size_bytes":  0,
+            "r2_daily_size":  0,
             "checks_passed":  0,
             "checks_total":   0,
             "all_passed":     True,
@@ -1406,9 +1411,14 @@ def main():
             "date_published_hour_counts": {},
         }
 
+        partition_dt = partition_date_for_data_date(dates_to_check[0])
         scraper_r2_inventory = count_scraper_r2_inventory(r2_client, bucket, r2_base)
+        scraper_daily_inventory = count_daily_r2_inventory(
+            r2_client, bucket, r2_base, partition_dt
+        )
         scraper_result["r2_file_count"] = scraper_r2_inventory["objects"]
         scraper_result["r2_size_bytes"] = scraper_r2_inventory["size_bytes"]
+        scraper_result["r2_daily_size"] = scraper_daily_inventory["size_bytes"]
 
         all_xlsx: List[Dict] = []
         excel_downloads: List[tuple] = []
@@ -1450,7 +1460,6 @@ def main():
                     f"tried e.g. {sample}{extra}"
                 )
                 scraper_result["all_passed"] = False
-            partition_dt = partition_date_for_data_date(dates_to_check[0])
             ads_stats = count_scraper_ads(
                 r2_client, bucket, r2_base, partition_dt, []
             )
@@ -1525,7 +1534,6 @@ def main():
                     xlsx_meta["date"],
                 )
 
-        partition_dt = partition_date_for_data_date(dates_to_check[0])
         ads_stats = count_scraper_ads(
             r2_client, bucket, r2_base, partition_dt, excel_downloads
         )
@@ -1559,6 +1567,7 @@ def main():
             f"{scraper_result['files_found']} file(s) today, "
             f"{scraper_result['r2_file_count']} R2 object(s) total, "
             f"{_fmt_size_bytes(scraper_result['r2_size_bytes'])} total size, "
+            f"{_fmt_size_bytes(scraper_result['r2_daily_size'])} daily size, "
             f"{scraper_result['checks_passed']}/{scraper_result['checks_total']} checks, "
             f"{scraper_result['unique_ads']} unique ads ({scraper_result['ads_source']})"
             f"{metrics_note}"
@@ -1574,6 +1583,8 @@ def main():
     total_unique_ads = sum(r.get("unique_ads") or 0 for r in all_results)
     full_report["total_unique_ads"] = total_unique_ads
     full_report["total_unique_phones"] = sum(r.get("unique_phones") or 0 for r in all_results)
+
+    full_report["r2_daily_size"] = sum(r.get("r2_daily_size") or 0 for r in all_results)
 
     site_r2_prefix = site.get("r2_prefix", "").strip("/")
     if site_r2_prefix:

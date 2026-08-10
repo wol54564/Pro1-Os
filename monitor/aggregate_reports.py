@@ -275,6 +275,7 @@ def summarize_site(
             "unique_phones": 0,
             "r2_file_count": 0,
             "r2_size_bytes": 0,
+            "r2_daily_size": 0,
         }
 
     results = _scraper_results(report)
@@ -314,6 +315,9 @@ def summarize_site(
     r2_size_bytes = report.get("total_r2_size_bytes")
     if r2_size_bytes is None:
         r2_size_bytes = sum(s.get("r2_size_bytes") or 0 for s in results)
+    r2_daily_size = report.get("r2_daily_size")
+    if r2_daily_size is None:
+        r2_daily_size = sum(s.get("r2_daily_size") or 0 for s in results)
 
     scrapers_failed = max(total - passed, 0)
 
@@ -334,6 +338,7 @@ def summarize_site(
         "unique_phones":   unique_phones,
         "r2_file_count":   r2_file_count,
         "r2_size_bytes":   r2_size_bytes,
+        "r2_daily_size":   r2_daily_size,
         "requests_total":  requests_total,
         "requests_failed": requests_failed,
         "error_rate_pct":  error_rate_pct,
@@ -403,6 +408,7 @@ def main():
     total_unique_phones = sum(s.get("unique_phones") or 0 for s in site_summaries)
     total_r2_files = sum(s.get("r2_file_count") or 0 for s in site_summaries)
     total_r2_size_bytes = sum(s.get("r2_size_bytes") or 0 for s in site_summaries)
+    total_r2_daily_size = sum(s.get("r2_daily_size") or 0 for s in site_summaries)
     total_requests = sum(s.get("requests_total") or 0 for s in site_summaries if s.get("requests_total"))
     total_requests_failed = sum(
         s.get("requests_failed") or 0 for s in site_summaries if s.get("requests_total")
@@ -435,6 +441,7 @@ def main():
         "total_unique_phones": total_unique_phones,
         "total_r2_files": total_r2_files,
         "total_r2_size_bytes": total_r2_size_bytes,
+        "total_r2_daily_size": total_r2_daily_size,
         "total_requests": total_requests or None,
         "total_requests_failed": total_requests_failed or None,
         "avg_error_rate_pct": avg_error_rate_pct,
@@ -461,7 +468,8 @@ def main():
     print(
         f"Hub summary: {sites_ok}/{len(sites)} sites OK · "
         f"{total_unique_ads} unique ads · {total_r2_files} R2 files · "
-        f"{_fmt_size_bytes(total_r2_size_bytes)} R2 size · {total_alerts} total alerts"
+        f"{_fmt_size_bytes(total_r2_size_bytes)} R2 total · "
+        f"{_fmt_size_bytes(total_r2_daily_size)} R2 daily · {total_alerts} total alerts"
     )
     if avg_requests_per_min is not None:
         print(

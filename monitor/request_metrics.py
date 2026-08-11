@@ -14,7 +14,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from ads_counter import _json_prefixes_for_date
+from ads_counter import _json_prefixes_for_date, _partition_prefixes_for_date
 
 log = logging.getLogger("monitor")
 
@@ -216,6 +216,25 @@ def _metrics_completeness(metrics: Dict[str, Any]) -> int:
     return score
 
 
+def _request_metrics_scan_targets(base: str, dt: datetime) -> List[Tuple[str, bool]]:
+    """
+    (prefix, summary_filename_only) pairs for request-metrics discovery.
+
+    Standard scrapers write to json-files/. Legacy Dalil uploads used the
+    partition root (e.g. dalil_summary_YYYYMMDD.json).
+    """
+    base = base.strip("/")
+    targets: List[Tuple[str, bool]] = [
+        (prefix, False) for prefix in _json_prefixes_for_date(base, dt)
+    ]
+    seen = {prefix for prefix, _ in targets}
+    for prefix in _partition_prefixes_for_date(base, dt):
+        if prefix not in seen:
+            seen.add(prefix)
+            targets.append((prefix, True))
+    return targets
+
+
 def load_json_request_metrics(
     client,
     bucket: str,
@@ -223,7 +242,7 @@ def load_json_request_metrics(
     partition_dt: datetime,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """
-    Scan json-files/ for the best request-metrics summary.
+    Scan json-files/ (and legacy partition-root summaries) for request metrics.
 
     Returns (metrics_dict, r2_key).
     """
@@ -231,7 +250,7 @@ def load_json_request_metrics(
     best_key: Optional[str] = None
     best_score = -1
 
-    for prefix in _json_prefixes_for_date(r2_base.strip("/"), partition_dt):
+    for prefix, summary_only in _request_metrics_scan_targets(r2_base, partition_dt):
         try:
             paginator = client.get_paginator("list_objects_v2")
             for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
@@ -239,6 +258,10 @@ def load_json_request_metrics(
                     key = obj["Key"]
                     if not key.lower().endswith(".json"):
                         continue
+                    if summary_only:
+                        basename = key.rsplit("/", 1)[-1].lower()
+                        if "summary" not in basename:
+                            continue
                     try:
                         resp = client.get_object(Bucket=bucket, Key=key)
                         data = json.loads(resp["Body"].read().decode("utf-8"))

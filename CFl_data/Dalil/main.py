@@ -404,7 +404,7 @@ class DalilScraperOrchestrator:
             R2_json_path = await asyncio.to_thread(
                 self.R2_helper.upload_file,
                 str(temp_json),
-                f"dalil_summary_{self.save_date.strftime('%Y%m%d')}.json",
+                f"json-files/dalil_summary_{self.save_date.strftime('%Y%m%d')}.json",
                 self.save_date
             )
             

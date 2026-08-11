@@ -176,15 +176,26 @@ def extract_subcategory_breakdown(data: Any) -> List[Dict[str, Any]]:
     return rows
 
 
-def _json_prefixes_for_date(base: str, dt: datetime) -> List[str]:
+def _partition_prefixes_for_date(base: str, dt: datetime) -> List[str]:
     seen: set = set()
     prefixes: List[str] = []
     for month in (f"{dt.month:02d}", str(dt.month)):
         for day in (f"{dt.day:02d}", str(dt.day)):
-            prefix = f"{base}/year={dt.year}/month={month}/day={day}/json-files/"
+            prefix = f"{base}/year={dt.year}/month={month}/day={day}/"
             if prefix not in seen:
                 seen.add(prefix)
                 prefixes.append(prefix)
+    return prefixes
+
+
+def _json_prefixes_for_date(base: str, dt: datetime) -> List[str]:
+    seen: set = set()
+    prefixes: List[str] = []
+    for partition in _partition_prefixes_for_date(base, dt):
+        prefix = f"{partition}json-files/"
+        if prefix not in seen:
+            seen.add(prefix)
+            prefixes.append(prefix)
     return prefixes
 
 

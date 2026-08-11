@@ -326,7 +326,9 @@ _SCRAPER_PROFILES: Dict[str, Dict] = {
         # One sheet per child category — row counts are too volatile for per-sheet trends
         "skip_sheet_trend_checks": True,
     },
-    "Furniture": {"min_file_size_kb": 5},
+    "Furniture": {"min_file_size_kb": 5,
+        "skip_sheet_trend_checks": True,
+    },
     "Property": {
         # property-offices (and similar) use one sheet per business — volatile row counts
         "skip_sheet_trend_checks": True,

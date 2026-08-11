@@ -171,6 +171,7 @@ ALERTS_COLS = [
     "detail",
     "file_key",
     "alert_id",
+    "solved",
 ]
 
 SKIP_SUBCATEGORY_SHEETS = frozenset({"info", "no data"})

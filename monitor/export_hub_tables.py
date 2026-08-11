@@ -844,6 +844,9 @@ def flatten_hub(
         alerts = report.get("alerts") or []
         for i, alert in enumerate(alerts):
             scraper = alert.get("scraper") or ""
+            solved = alert.get("solved")
+            if solved is None:
+                solved = False
             alert_rows.append({
                 "hub_partition_date": hub_partition,
                 "site_id": site_id,
@@ -854,6 +857,7 @@ def flatten_hub(
                 "detail": alert.get("detail"),
                 "file_key": alert.get("file"),
                 "alert_id": f"{hub_partition}:{site_id}:{scraper}:{i}",
+                "solved": bool(solved),
             })
 
     hub_row.update(_hub_request_totals(site_rows))

@@ -183,6 +183,7 @@ SCHEMA_STATEMENTS = [
       detail               VARCHAR,
       file_key             VARCHAR,
       alert_id             VARCHAR,
+      solved               BOOLEAN DEFAULT FALSE,
       PRIMARY KEY (alert_id)
     )
     """,
@@ -259,6 +260,7 @@ MIGRATION_STATEMENTS = [
     "ALTER TABLE scraper_subcategory_daily ADD COLUMN IF NOT EXISTS sheet_rows INTEGER",
     "ALTER TABLE scraper_subcategory_daily ADD COLUMN IF NOT EXISTS sheets_count INTEGER",
     "ALTER TABLE scraper_subcategory_daily ADD COLUMN IF NOT EXISTS source VARCHAR",
+    "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS solved BOOLEAN DEFAULT FALSE",
 ]
 
 

@@ -4,8 +4,7 @@ name: "Schema Monitor"
 on:
   # Fallback if the Batch C-2 chain fails to trigger the monitor (08:00 UTC Mon–Sat)
   schedule:
-    - cron: '0 8 * * 1-6'   # Mon–Sat  →  daily-check job
-    - cron: '0 9 * * 0'     # Sunday   →  weekly-stats job
+    - cron: '0 19 * * 0'     # Sunday at 7:00 PM UTC  →  weekly-stats job
 
   # Also fires when Batch C-2 is started manually (not via GITHUB_TOKEN chain)
   workflow_run:

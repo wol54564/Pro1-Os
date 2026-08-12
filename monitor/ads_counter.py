@@ -44,6 +44,8 @@ PHONE_COLUMN_NAMES = frozenset({
     "contacts",
     "contact_no",
     "contact no",
+    "main_branch_phone",
+    "main branch phone",
 })
 PHONE_COLUMN_CANONICAL = frozenset({
     "phone",
@@ -52,6 +54,7 @@ PHONE_COLUMN_CANONICAL = frozenset({
     "whatsappphone",
     "contacts",
     "contactno",
+    "mainbranchphone",
 })
 TOTAL_LISTINGS_KEYS = (
     "total_listings",

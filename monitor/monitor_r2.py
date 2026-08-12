@@ -127,7 +127,8 @@ _NON_DAILY_SCHEDULES = frozenset({
 _SCHEDULE_LOOKBACK_DAYS = {
     "monthly": 31,
     "quarterly": 120,
-    "every_2_days": 3,
+    # Sheeel often skips a day; keep enough runway past weekends / partition offset.
+    "every_2_days": 7,
     "weekly": 7,
     "biweekly": 14,
 }
@@ -137,6 +138,7 @@ _FOLDER_DEFAULT_SCHEDULE = {
     "motorgy": "monthly",
     "kcsb": "quarterly",
     "sheeel": "every_2_days",
+    "sheel": "every_2_days",
 }
 
 

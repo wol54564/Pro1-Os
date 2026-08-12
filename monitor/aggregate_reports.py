@@ -10,8 +10,9 @@ Each site's report:
   {r2_prefix}/monitor/{partition-date}/report.json   (partition = listing date + 1 day)
 
 Non-daily sites (monthly motorgy, quarterly kcsb, every-2-days sheeel) may not
-have a report for today's partition — the hub reuses the latest report on or
-before that date (see registry schedule / report_fallback).
+have a report for today's partition — the hub reuses the latest usable report
+on or before that date. A same-day empty/zero report (monitor ran, scraper did
+not) also triggers fallback (see registry schedule / report_fallback).
 
 Writes merged hub output to R2:
   monitor-sites/hub/{partition-date}/all-sites.json
@@ -181,6 +182,56 @@ def _load_report_at_key(client, bucket: str, key: str) -> Dict:
     return json.loads(resp["Body"].read().decode("utf-8"))
 
 
+def _is_missing_object(exc: Exception, client) -> bool:
+    nosuch = getattr(client.exceptions, "NoSuchKey", None)
+    if nosuch is not None and isinstance(exc, nosuch):
+        return True
+    response = getattr(exc, "response", None)
+    if isinstance(response, dict):
+        code = str(response.get("Error", {}).get("Code", ""))
+        return code in ("NoSuchKey", "404", "NotFound")
+    return False
+
+
+def _extract_unique_ads(report: Dict, results: Optional[List[Dict]] = None) -> Optional[int]:
+    if results is None:
+        results = _scraper_results(report)
+    unique_ads = report.get("total_unique_ads")
+    if unique_ads is None:
+        unique_ads = _to_int(report.get("total_ads"))
+    if unique_ads is None and isinstance(report.get("categories"), list):
+        unique_ads = sum(
+            _to_int(c.get("total_ads")) or 0
+            for c in report.get("categories", [])
+            if isinstance(c, dict)
+        )
+    if unique_ads is None:
+        unique_ads = sum(_to_int(s.get("unique_ads")) or 0 for s in results)
+    return _to_int(unique_ads)
+
+
+def _report_is_empty(report: Optional[Dict]) -> bool:
+    """True when a report exists but has no listing data (typical off-day for non-daily sites)."""
+    if not report:
+        return True
+    results = _scraper_results(report)
+    if _extract_unique_ads(report, results):
+        return False
+    phones = _to_int(report.get("total_unique_phones"))
+    if phones is None:
+        phones = sum(_to_int(s.get("unique_phones")) or 0 for s in results)
+    if phones:
+        return False
+    if any((_to_int(s.get("files_found")) or 0) > 0 for s in results):
+        return False
+    if any((_to_int(s.get("unique_ads")) or 0) > 0 for s in results):
+        return False
+    daily = _to_int(report.get("r2_daily_size"))
+    if daily is None:
+        daily = sum(_to_int(s.get("r2_daily_size")) or 0 for s in results)
+    return not bool(daily)
+
+
 def fetch_report(
     client,
     bucket: str,
@@ -191,23 +242,37 @@ def fetch_report(
     Fetch a site's report for the hub partition date.
 
     Returns (report, report_partition_date, used_fallback).
-    Non-daily sites fall back to the latest report on or before partition_date.
+    Non-daily sites fall back to the latest *usable* report on or before
+    partition_date (missing or empty/zero same-day reports trigger fallback).
     """
     label = site.get("folder", site.get("site_id"))
     key = report_r2_key(site, partition_date)
+    data: Optional[Dict] = None
     try:
         data = _load_report_at_key(client, bucket, key)
+    except Exception as exc:
+        if _is_missing_object(exc, client):
+            data = None
+        else:
+            log.warning(f"  ✗ {label}: {exc}")
+            data = None
+
+    today_usable = data is not None and not _report_is_empty(data)
+    if today_usable:
         log.info(f"  ✓ {label}: r2://{bucket}/{key}")
         return data, partition_date, False
-    except client.exceptions.NoSuchKey:
-        pass
-    except Exception as exc:
-        log.warning(f"  ✗ {label}: {exc}")
+
+    if data is not None:
+        log.info(
+            f"  ○ {label}: empty/zero report at r2://{bucket}/{key} "
+            f"— looking for last usable report"
+        )
+    elif not site_allows_report_fallback(site):
+        log.warning(f"  ✗ {label}: no report at {key}")
         return None, partition_date, False
 
     if not site_allows_report_fallback(site):
-        log.warning(f"  ✗ {label}: no report at {key}")
-        return None, partition_date, False
+        return data, partition_date, False
 
     max_dt = datetime.strptime(partition_date, "%Y-%m-%d")
     min_dt = max_dt - timedelta(days=report_lookback_days(site))
@@ -215,31 +280,41 @@ def fetch_report(
         all_dates = list_report_partition_dates(client, bucket, site)
     except Exception as exc:
         log.warning(f"  ✗ {label}: no report at {key} · could not list earlier reports ({exc})")
-        return None, partition_date, False
+        return data, partition_date, False
 
     candidates = [
-        d for d in all_dates
+        d for d in reversed(all_dates)
         if min_dt <= datetime.strptime(d, "%Y-%m-%d") <= max_dt
     ]
-    if not candidates:
-        log.warning(
-            f"  ✗ {label}: no report at {key} "
-            f"and none in lookback {min_dt.strftime('%Y-%m-%d')} … {partition_date}"
-        )
-        return None, partition_date, False
-
-    fallback_date = candidates[-1]
-    fallback_key = report_r2_key(site, fallback_date)
-    try:
-        data = _load_report_at_key(client, bucket, fallback_key)
+    for fallback_date in candidates:
+        if fallback_date == partition_date:
+            continue
+        fallback_key = report_r2_key(site, fallback_date)
+        try:
+            fallback_data = _load_report_at_key(client, bucket, fallback_key)
+        except Exception as exc:
+            log.warning(f"  ✗ {label}: failed to load fallback report at {fallback_key}: {exc}")
+            continue
+        if _report_is_empty(fallback_data):
+            continue
         log.info(
             f"  ↩ {label}: r2://{bucket}/{fallback_key} "
-            f"(latest within lookback; hub partition {partition_date})"
+            f"(latest usable within lookback; hub partition {partition_date})"
         )
-        return data, fallback_date, True
-    except Exception as exc:
-        log.warning(f"  ✗ {label}: failed to load fallback report at {fallback_key}: {exc}")
-        return None, partition_date, False
+        return fallback_data, fallback_date, True
+
+    if data is not None:
+        log.warning(
+            f"  ✗ {label}: only empty reports in lookback "
+            f"{min_dt.strftime('%Y-%m-%d')} … {partition_date}; using {key}"
+        )
+        return data, partition_date, False
+
+    log.warning(
+        f"  ✗ {label}: no report at {key} "
+        f"and none usable in lookback {min_dt.strftime('%Y-%m-%d')} … {partition_date}"
+    )
+    return None, partition_date, False
 
 
 def summarize_site(
@@ -295,17 +370,7 @@ def summarize_site(
             passed = total
 
     alerts  = report.get("alert_count", len(report.get("alerts", [])))
-    unique_ads = report.get("total_unique_ads")
-    if unique_ads is None:
-        unique_ads = _to_int(report.get("total_ads"))
-    if unique_ads is None and isinstance(report.get("categories"), list):
-        unique_ads = sum(
-            _to_int(c.get("total_ads")) or 0
-            for c in report.get("categories", [])
-            if isinstance(c, dict)
-        )
-    if unique_ads is None:
-        unique_ads = sum(s.get("unique_ads") or 0 for s in results)
+    unique_ads = _extract_unique_ads(report, results)
     unique_phones = report.get("total_unique_phones")
     if unique_phones is None:
         unique_phones = sum(s.get("unique_phones") or 0 for s in results)

@@ -5,8 +5,8 @@ name: "Phone & Ads Validation"
 
 on:
   schedule:
-    # After typical daily scrape window (09:30 UTC Mon–Sat)
-    - cron: "30 9 * * 1-6"
+    # After typical daily scrape window (20:30 UTC Mon–Sat)
+    - cron: "30 20 * * 1-6"
 
   workflow_run:
     workflows:

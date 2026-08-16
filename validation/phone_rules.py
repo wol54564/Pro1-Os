@@ -54,8 +54,8 @@ COUNTRY_CODE = "965"
 NATIONAL_LEN = 8
 E164_LEN = len(COUNTRY_CODE) + NATIONAL_LEN  # 11
 
-# Local first digit: mobiles 5/6/9, landlines commonly 2.
-VALID_LOCAL_PREFIXES = frozenset("2569")
+# Local first digit: mobiles 4/5/6/9, landlines commonly 2.
+VALID_LOCAL_PREFIXES = frozenset("24569")
 
 # Status codes returned by classify_phone
 STATUS_VALID = "valid"

@@ -348,6 +348,9 @@ def summarize_site(
             "alert_count": 0,
             "unique_ads": 0,
             "unique_phones": 0,
+            "valid_phones": 0,
+            "invalid_phones": 0,
+            "outside_country_phones": 0,
             "r2_file_count": 0,
             "r2_size_bytes": 0,
             "r2_daily_size": 0,
@@ -374,6 +377,15 @@ def summarize_site(
     unique_phones = report.get("total_unique_phones")
     if unique_phones is None:
         unique_phones = sum(s.get("unique_phones") or 0 for s in results)
+    valid_phones = report.get("total_valid_phones")
+    if valid_phones is None:
+        valid_phones = sum(s.get("valid_phones") or 0 for s in results)
+    invalid_phones = report.get("total_invalid_phones")
+    if invalid_phones is None:
+        invalid_phones = sum(s.get("invalid_phones") or 0 for s in results)
+    outside_country_phones = report.get("total_outside_country_phones")
+    if outside_country_phones is None:
+        outside_country_phones = sum(s.get("outside_country_phones") or 0 for s in results)
     r2_file_count = report.get("total_r2_files")
     if r2_file_count is None:
         r2_file_count = sum(s.get("r2_file_count") or 0 for s in results)
@@ -401,6 +413,9 @@ def summarize_site(
         "alert_count":     alerts,
         "unique_ads":      unique_ads,
         "unique_phones":   unique_phones,
+        "valid_phones":    valid_phones,
+        "invalid_phones":  invalid_phones,
+        "outside_country_phones": outside_country_phones,
         "r2_file_count":   r2_file_count,
         "r2_size_bytes":   r2_size_bytes,
         "r2_daily_size":   r2_daily_size,
@@ -471,6 +486,11 @@ def main():
     total_alerts  = sum(s["alert_count"] for s in site_summaries)
     total_unique_ads = sum(s.get("unique_ads") or 0 for s in site_summaries)
     total_unique_phones = sum(s.get("unique_phones") or 0 for s in site_summaries)
+    total_valid_phones = sum(s.get("valid_phones") or 0 for s in site_summaries)
+    total_invalid_phones = sum(s.get("invalid_phones") or 0 for s in site_summaries)
+    total_outside_country_phones = sum(
+        s.get("outside_country_phones") or 0 for s in site_summaries
+    )
     total_r2_files = sum(s.get("r2_file_count") or 0 for s in site_summaries)
     total_r2_size_bytes = sum(s.get("r2_size_bytes") or 0 for s in site_summaries)
     total_r2_daily_size = sum(s.get("r2_daily_size") or 0 for s in site_summaries)
@@ -504,6 +524,9 @@ def main():
         "total_alerts":  total_alerts,
         "total_unique_ads": total_unique_ads,
         "total_unique_phones": total_unique_phones,
+        "total_valid_phones": total_valid_phones,
+        "total_invalid_phones": total_invalid_phones,
+        "total_outside_country_phones": total_outside_country_phones,
         "total_r2_files": total_r2_files,
         "total_r2_size_bytes": total_r2_size_bytes,
         "total_r2_daily_size": total_r2_daily_size,

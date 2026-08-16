@@ -1408,6 +1408,9 @@ def main():
             "file_results":   [],
             "unique_ads":     0,
             "unique_phones":  0,
+            "valid_phones":   0,
+            "invalid_phones": 0,
+            "outside_country_phones": 0,
             "total_rows":     0,
             "ads_source":     "none",
             "date_published_hour_counts": {},
@@ -1467,6 +1470,9 @@ def main():
             )
             scraper_result["unique_ads"] = ads_stats.get("unique_ads") or 0
             scraper_result["unique_phones"] = ads_stats.get("unique_phones") or 0
+            scraper_result["valid_phones"] = ads_stats.get("valid_phones") or 0
+            scraper_result["invalid_phones"] = ads_stats.get("invalid_phones") or 0
+            scraper_result["outside_country_phones"] = ads_stats.get("outside_country_phones") or 0
             scraper_result["total_rows"] = ads_stats.get("total_rows") or 0
             scraper_result["ads_source"] = ads_stats.get("ads_source", "none")
             if ads_stats.get("date_published_hour_counts") is not None:
@@ -1541,6 +1547,9 @@ def main():
         )
         scraper_result["unique_ads"] = ads_stats.get("unique_ads") or 0
         scraper_result["unique_phones"] = ads_stats.get("unique_phones") or 0
+        scraper_result["valid_phones"] = ads_stats.get("valid_phones") or 0
+        scraper_result["invalid_phones"] = ads_stats.get("invalid_phones") or 0
+        scraper_result["outside_country_phones"] = ads_stats.get("outside_country_phones") or 0
         scraper_result["total_rows"] = ads_stats.get("total_rows") or 0
         scraper_result["ads_source"] = ads_stats.get("ads_source", "none")
         if ads_stats.get("date_published_hour_counts") is not None:
@@ -1571,7 +1580,10 @@ def main():
             f"{_fmt_size_bytes(scraper_result['r2_size_bytes'])} total size, "
             f"{_fmt_size_bytes(scraper_result['r2_daily_size'])} daily size, "
             f"{scraper_result['checks_passed']}/{scraper_result['checks_total']} checks, "
-            f"{scraper_result['unique_ads']} unique ads ({scraper_result['ads_source']})"
+            f"{scraper_result['unique_ads']} unique ads ({scraper_result['ads_source']}), "
+            f"phones valid={scraper_result['valid_phones']} "
+            f"invalid={scraper_result['invalid_phones']} "
+            f"outside={scraper_result['outside_country_phones']}"
             f"{metrics_note}"
         )
         if not scraper_result["all_passed"]:
@@ -1585,6 +1597,11 @@ def main():
     total_unique_ads = sum(r.get("unique_ads") or 0 for r in all_results)
     full_report["total_unique_ads"] = total_unique_ads
     full_report["total_unique_phones"] = sum(r.get("unique_phones") or 0 for r in all_results)
+    full_report["total_valid_phones"] = sum(r.get("valid_phones") or 0 for r in all_results)
+    full_report["total_invalid_phones"] = sum(r.get("invalid_phones") or 0 for r in all_results)
+    full_report["total_outside_country_phones"] = sum(
+        r.get("outside_country_phones") or 0 for r in all_results
+    )
 
     full_report["r2_daily_size"] = sum(r.get("r2_daily_size") or 0 for r in all_results)
 

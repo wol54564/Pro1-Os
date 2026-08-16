@@ -6,7 +6,8 @@ Validate phone numbers and ad/listing IDs in scraper Excel files on R2.
 Uses the same site config + partition layout as the schema monitor, but is a
 separate pipeline under validation/ with its own workflow.
 
-Rules follow CFl_data shapes (Kuwait 965 + 8 digits; id / user_adv_id columns).
+Rules follow CFl_data shapes (Kuwait 965 + 8 digits with local first digit
+2/4/5/6/9; id / user_adv_id columns).
 
 Usage
 -----

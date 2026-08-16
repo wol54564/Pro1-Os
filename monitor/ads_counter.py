@@ -16,10 +16,25 @@ import io
 import json
 import logging
 import re
+import sys
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import pandas as pd
+
+# Reuse Kuwait phone classification from validation/
+_VALIDATION_DIR = Path(__file__).resolve().parent.parent / "validation"
+if str(_VALIDATION_DIR) not in sys.path:
+    sys.path.insert(0, str(_VALIDATION_DIR))
+
+from phone_rules import (  # noqa: E402
+    STATUS_HIDDEN,
+    STATUS_MISSING,
+    STATUS_VALID,
+    STATUS_WRONG_COUNTRY,
+    classify_phone,
+)
 
 log = logging.getLogger("monitor")
 
@@ -248,13 +263,46 @@ def _extract_phone_tokens(value: Any) -> List[str]:
     return re.findall(r"\d+", text)
 
 
-def _normalized_phones(value: Any) -> List[str]:
-    phones: List[str] = []
-    for token in _extract_phone_tokens(value):
-        digits = "".join(ch for ch in token if ch.isdigit())
-        if len(digits) >= 7:
-            phones.append(digits)
-    return phones
+def _phone_identity(value: Any, normalized: Optional[str]) -> Optional[str]:
+    """Stable unique key for a phone cell (prefer E.164 when available)."""
+    if normalized:
+        return normalized
+    tokens = _extract_phone_tokens(value)
+    if not tokens:
+        return None
+    digits = max(("".join(ch for ch in t if ch.isdigit()) for t in tokens), key=len, default="")
+    return digits or None
+
+
+def _collect_phone_classifications(
+    value: Any,
+    *,
+    all_phones: Set[str],
+    valid_phones: Set[str],
+    invalid_phones: Set[str],
+    outside_country_phones: Set[str],
+) -> None:
+    """
+    Classify one phone cell into valid / invalid-fake / outside-country buckets.
+
+    Valid requires Kuwait 965 + 8 digits with local first digit in 2/4/5/6/9.
+    Wrong country codes go to outside_country; other bad shapes go to invalid.
+    """
+    status, normalized = classify_phone(value)
+    if status in (STATUS_MISSING, STATUS_HIDDEN):
+        return
+
+    identity = _phone_identity(value, normalized)
+    if not identity:
+        return
+
+    all_phones.add(identity)
+    if status == STATUS_VALID:
+        valid_phones.add(identity)
+    elif status == STATUS_WRONG_COUNTRY:
+        outside_country_phones.add(identity)
+    else:
+        invalid_phones.add(identity)
 
 
 def count_ads_from_excel_bytes(raw: bytes) -> Tuple[Optional[int], int, bool]:
@@ -359,9 +407,41 @@ def count_ads_from_downloads(downloads: List[Tuple[str, bytes]]) -> Dict[str, An
     """Aggregate ad counts from in-memory Excel downloads."""
     combined_ids: Set[Any] = set()
     combined_phones: Set[str] = set()
+    valid_phones: Set[str] = set()
+    invalid_phones: Set[str] = set()
+    outside_country_phones: Set[str] = set()
     total_rows = 0
     found_id = False
     date_published_hour_counts: Dict[int, int] = {}
+
+    def _scan_workbook(raw: bytes, *, collect_ids: bool) -> None:
+        xl = pd.ExcelFile(io.BytesIO(raw), engine="openpyxl")
+        for sheet_name in xl.sheet_names:
+            if sheet_name.strip().lower() in SKIP_SHEETS:
+                continue
+            df = pd.read_excel(xl, sheet_name=sheet_name, engine="openpyxl")
+            if df.empty:
+                continue
+
+            phone_cols = _find_phone_columns(df.columns)
+            for phone_col in phone_cols:
+                for value in df[phone_col].dropna():
+                    _collect_phone_classifications(
+                        value,
+                        all_phones=combined_phones,
+                        valid_phones=valid_phones,
+                        invalid_phones=invalid_phones,
+                        outside_country_phones=outside_country_phones,
+                    )
+
+            if not collect_ids:
+                continue
+            id_col = _find_id_column(df.columns)
+            if id_col is None:
+                continue
+            for value in df[id_col].dropna().astype(str).str.strip():
+                if value and value.lower() not in ("nan", "none"):
+                    combined_ids.add(value)
 
     for _key, raw in downloads:
         unique_ads, rows, has_id = count_ads_from_excel_bytes(raw)
@@ -374,49 +454,28 @@ def count_ads_from_downloads(downloads: List[Tuple[str, bytes]]) -> Dict[str, An
             found_id = True
             # Re-read IDs for cross-file dedup (small daily files)
             try:
-                xl = pd.ExcelFile(io.BytesIO(raw), engine="openpyxl")
-                for sheet_name in xl.sheet_names:
-                    if sheet_name.strip().lower() in SKIP_SHEETS:
-                        continue
-                    df = pd.read_excel(xl, sheet_name=sheet_name, engine="openpyxl")
-
-                    phone_cols = _find_phone_columns(df.columns)
-                    for phone_col in phone_cols:
-                        for value in df[phone_col].dropna():
-                            for normalized in _normalized_phones(value):
-                                combined_phones.add(normalized)
-
-                    id_col = _find_id_column(df.columns)
-                    if id_col is None:
-                        continue
-                    for value in df[id_col].dropna().astype(str).str.strip():
-                        if value and value.lower() not in ("nan", "none"):
-                            combined_ids.add(value)
+                _scan_workbook(raw, collect_ids=True)
             except Exception:
                 pass
 
         # Even if no ID columns exist, still capture unique phones from phone column.
         if not has_id:
             try:
-                xl = pd.ExcelFile(io.BytesIO(raw), engine="openpyxl")
-                for sheet_name in xl.sheet_names:
-                    if sheet_name.strip().lower() in SKIP_SHEETS:
-                        continue
-                    df = pd.read_excel(xl, sheet_name=sheet_name, engine="openpyxl")
-                    phone_cols = _find_phone_columns(df.columns)
-                    if not phone_cols:
-                        continue
-                    for phone_col in phone_cols:
-                        for value in df[phone_col].dropna():
-                            for normalized in _normalized_phones(value):
-                                combined_phones.add(normalized)
+                _scan_workbook(raw, collect_ids=False)
             except Exception:
                 pass
+
+    phone_stats = {
+        "unique_phones": len(combined_phones),
+        "valid_phones": len(valid_phones),
+        "invalid_phones": len(invalid_phones),
+        "outside_country_phones": len(outside_country_phones),
+    }
 
     if found_id:
         return {
             "unique_ads": len(combined_ids),
-            "unique_phones": len(combined_phones),
+            **phone_stats,
             "total_rows": total_rows,
             "ads_source": "excel_ids",
             "date_published_hour_counts": date_published_hour_counts,
@@ -425,7 +484,7 @@ def count_ads_from_downloads(downloads: List[Tuple[str, bytes]]) -> Dict[str, An
     if total_rows > 0:
         return {
             "unique_ads": total_rows,
-            "unique_phones": len(combined_phones),
+            **phone_stats,
             "total_rows": total_rows,
             "ads_source": "excel_rows",
             "date_published_hour_counts": date_published_hour_counts,
@@ -433,7 +492,7 @@ def count_ads_from_downloads(downloads: List[Tuple[str, bytes]]) -> Dict[str, An
 
     return {
         "unique_ads": 0,
-        "unique_phones": len(combined_phones),
+        **phone_stats,
         "total_rows": 0,
         "ads_source": "none",
         "date_published_hour_counts": date_published_hour_counts,
@@ -543,6 +602,13 @@ def count_scraper_ads(
 
     json_total, json_key, json_breakdown = load_json_summaries(client, bucket, r2_base, partition_dt)
 
+    phone_fields = {
+        "unique_phones": excel_stats.get("unique_phones", 0),
+        "valid_phones": excel_stats.get("valid_phones", 0),
+        "invalid_phones": excel_stats.get("invalid_phones", 0),
+        "outside_country_phones": excel_stats.get("outside_country_phones", 0),
+    }
+
     if excel_stats["ads_source"] == "excel_ids":
         result = dict(excel_stats)
         result["json_summary_key"] = json_key
@@ -553,7 +619,7 @@ def count_scraper_ads(
     if json_total is not None:
         return {
             "unique_ads": json_total,
-            "unique_phones": excel_stats.get("unique_phones", 0),
+            **phone_fields,
             "total_rows": excel_stats["total_rows"] or json_total,
             "ads_source": "json_summary",
             "json_summary_key": json_key,

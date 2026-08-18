@@ -43,6 +43,7 @@ from monitor_r2 import (
     report_r2_key,
     site_allows_report_fallback,
 )
+from r2_file_counter import R2_TYPE_CATEGORIES
 
 logging.basicConfig(
     level=logging.INFO,
@@ -354,6 +355,8 @@ def summarize_site(
             "r2_file_count": 0,
             "r2_size_bytes": 0,
             "r2_daily_size": 0,
+            **{f"r2_{cat}_bytes": 0 for cat in R2_TYPE_CATEGORIES},
+            **{f"r2_daily_{cat}_bytes": 0 for cat in R2_TYPE_CATEGORIES},
         }
 
     results = _scraper_results(report)
@@ -396,6 +399,21 @@ def summarize_site(
     if r2_daily_size is None:
         r2_daily_size = sum(s.get("r2_daily_size") or 0 for s in results)
 
+    # Storage breakdown totals/daily by file type.
+    r2_type_totals: Dict[str, int] = {}
+    r2_type_daily_totals: Dict[str, int] = {}
+    for cat in R2_TYPE_CATEGORIES:
+        total_val = report.get(f"total_r2_{cat}_bytes")
+        if total_val is None:
+            total_val = sum((s.get(f"r2_{cat}_bytes") or 0) for s in results)
+        daily_val = report.get(f"total_r2_daily_{cat}_bytes")
+        if daily_val is None:
+            daily_val = sum(
+                (s.get(f"r2_daily_{cat}_bytes") or 0) for s in results
+            )
+        r2_type_totals[cat] = int(total_val or 0)
+        r2_type_daily_totals[cat] = int(daily_val or 0)
+
     scrapers_failed = max(total - passed, 0)
 
     return {
@@ -419,6 +437,8 @@ def summarize_site(
         "r2_file_count":   r2_file_count,
         "r2_size_bytes":   r2_size_bytes,
         "r2_daily_size":   r2_daily_size,
+        **{f"r2_{cat}_bytes": r2_type_totals.get(cat, 0) for cat in R2_TYPE_CATEGORIES},
+        **{f"r2_daily_{cat}_bytes": r2_type_daily_totals.get(cat, 0) for cat in R2_TYPE_CATEGORIES},
         "requests_total":  requests_total,
         "requests_failed": requests_failed,
         "error_rate_pct":  error_rate_pct,
@@ -494,6 +514,14 @@ def main():
     total_r2_files = sum(s.get("r2_file_count") or 0 for s in site_summaries)
     total_r2_size_bytes = sum(s.get("r2_size_bytes") or 0 for s in site_summaries)
     total_r2_daily_size = sum(s.get("r2_daily_size") or 0 for s in site_summaries)
+    total_r2_type_bytes = {
+        cat: sum((s.get(f"r2_{cat}_bytes") or 0) for s in site_summaries)
+        for cat in R2_TYPE_CATEGORIES
+    }
+    total_r2_type_daily_bytes = {
+        cat: sum((s.get(f"r2_daily_{cat}_bytes") or 0) for s in site_summaries)
+        for cat in R2_TYPE_CATEGORIES
+    }
     total_requests = sum(s.get("requests_total") or 0 for s in site_summaries if s.get("requests_total"))
     total_requests_failed = sum(
         s.get("requests_failed") or 0 for s in site_summaries if s.get("requests_total")
@@ -530,6 +558,8 @@ def main():
         "total_r2_files": total_r2_files,
         "total_r2_size_bytes": total_r2_size_bytes,
         "total_r2_daily_size": total_r2_daily_size,
+        **{f"total_r2_{cat}_bytes": total_r2_type_bytes.get(cat, 0) for cat in R2_TYPE_CATEGORIES},
+        **{f"total_r2_daily_{cat}_bytes": total_r2_type_daily_bytes.get(cat, 0) for cat in R2_TYPE_CATEGORIES},
         "total_requests": total_requests or None,
         "total_requests_failed": total_requests_failed or None,
         "avg_error_rate_pct": avg_error_rate_pct,

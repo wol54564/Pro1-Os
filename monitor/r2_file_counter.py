@@ -13,8 +13,177 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from typing import Dict, List
+from pathlib import Path
 
 log = logging.getLogger("monitor")
+
+
+# File-type categories for R2 storage breakdown.
+# These are meant for monitoring dashboards (not exact MIME detection).
+R2_TYPE_CATEGORIES = ("images", "json", "excel", "csv", "parquet", "other")
+
+_IMAGE_EXTS = frozenset({
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
+    ".gif",
+    ".bmp",
+    ".tiff",
+    ".svg",
+})
+
+_JSON_EXTS = frozenset({".json"})
+
+_EXCEL_EXTS = frozenset({".xlsx", ".xls", ".xlsm"})
+
+_CSV_EXTS = frozenset({".csv"})
+
+_PARQUET_EXTS = frozenset({".parquet"})
+
+
+def _r2_category_for_key(key: str) -> str:
+    """Map a key name to a coarse storage category."""
+    ext = Path(key).suffix.lower()
+    if ext in _IMAGE_EXTS:
+        return "images"
+    if ext in _JSON_EXTS:
+        return "json"
+    if ext in _EXCEL_EXTS:
+        return "excel"
+    if ext in _CSV_EXTS:
+        return "csv"
+    if ext in _PARQUET_EXTS:
+        return "parquet"
+    return "other"
+
+
+def _empty_type_dict() -> Dict[str, int]:
+    return {cat: 0 for cat in R2_TYPE_CATEGORIES}
+
+
+def count_r2_inventory_by_type(
+    client, bucket: str, prefix: str
+) -> Dict[str, object]:
+    """
+    Count objects and bytes under *prefix*, broken down by storage category.
+
+    Returns:
+      {
+        "objects": int,
+        "size_bytes": int,
+        "by_type_objects": {category: int, ...},
+        "by_type_bytes": {category: int, ...},
+      }
+    """
+    normalized = prefix.strip("/")
+    list_prefix = f"{normalized}/" if normalized else ""
+
+    count = 0
+    size_bytes = 0
+    by_type_objects = _empty_type_dict()
+    by_type_bytes = _empty_type_dict()
+
+    paginator = client.get_paginator("list_objects_v2")
+    try:
+        for page in paginator.paginate(Bucket=bucket, Prefix=list_prefix):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                if key.endswith("/"):
+                    continue
+                cat = _r2_category_for_key(key)
+                obj_size = int(obj.get("Size") or 0)
+
+                count += 1
+                size_bytes += obj_size
+                by_type_objects[cat] += 1
+                by_type_bytes[cat] += obj_size
+    except Exception as exc:
+        log.warning(f"R2 inventory-by-type failed for prefix {list_prefix!r}: {exc}")
+        return {
+            "objects": 0,
+            "size_bytes": 0,
+            "by_type_objects": _empty_type_dict(),
+            "by_type_bytes": _empty_type_dict(),
+        }
+
+    return {
+        "objects": count,
+        "size_bytes": size_bytes,
+        "by_type_objects": by_type_objects,
+        "by_type_bytes": by_type_bytes,
+    }
+
+
+def count_daily_r2_inventory_by_type(
+    client,
+    bucket: str,
+    r2_base: str,
+    partition_dt: datetime,
+) -> Dict[str, object]:
+    """
+    Count objects and bytes under one scraper's *daily* partition folders
+    (deduping padded/unpadded year/month/day prefix variants), broken down by
+    storage category.
+    """
+    base = r2_base.strip("/")
+    if not base:
+        return {
+            "objects": 0,
+            "size_bytes": 0,
+            "by_type_objects": _empty_type_dict(),
+            "by_type_bytes": _empty_type_dict(),
+        }
+
+    seen_keys: set = set()
+    count = 0
+    size_bytes = 0
+    by_type_objects = _empty_type_dict()
+    by_type_bytes = _empty_type_dict()
+
+    paginator = client.get_paginator("list_objects_v2")
+    for prefix in _date_partition_prefixes(base, partition_dt):
+        try:
+            for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+                for obj in page.get("Contents", []):
+                    key = obj["Key"]
+                    if key.endswith("/") or key in seen_keys:
+                        continue
+                    seen_keys.add(key)
+                    cat = _r2_category_for_key(key)
+                    obj_size = int(obj.get("Size") or 0)
+
+                    count += 1
+                    size_bytes += obj_size
+                    by_type_objects[cat] += 1
+                    by_type_bytes[cat] += obj_size
+        except Exception as exc:
+            log.warning(f"R2 daily inventory-by-type failed for prefix {prefix!r}: {exc}")
+
+    return {
+        "objects": count,
+        "size_bytes": size_bytes,
+        "by_type_objects": by_type_objects,
+        "by_type_bytes": by_type_bytes,
+    }
+
+
+def count_scraper_r2_inventory_by_type(client, bucket: str, r2_base: str) -> Dict[str, object]:
+    """Total objects + bytes under one scraper/category prefix, split by type."""
+    base = r2_base.strip("/")
+    if not base:
+        return {
+            "objects": 0,
+            "size_bytes": 0,
+            "by_type_objects": _empty_type_dict(),
+            "by_type_bytes": _empty_type_dict(),
+        }
+    return count_r2_inventory_by_type(client, bucket, base)
+
+
+def count_site_r2_inventory_by_type(client, bucket: str, r2_prefix: str) -> Dict[str, object]:
+    """Total objects + bytes under a site prefix, split by type."""
+    return count_r2_inventory_by_type(client, bucket, r2_prefix)
 
 
 def count_r2_inventory(client, bucket: str, prefix: str) -> Dict[str, int]:

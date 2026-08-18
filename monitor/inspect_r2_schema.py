@@ -62,9 +62,10 @@ from request_metrics import (
     count_scraper_request_metrics,
 )
 from r2_file_counter import (
-    count_daily_r2_inventory,
-    count_scraper_r2_inventory,
-    count_site_r2_inventory,
+    R2_TYPE_CATEGORIES,
+    count_daily_r2_inventory_by_type,
+    count_scraper_r2_inventory_by_type,
+    count_site_r2_inventory_by_type,
 )
 from github_workflows import build_scraper_run_meta, merge_registry_site
 from monitor_r2 import (
@@ -88,6 +89,16 @@ log = logging.getLogger("monitor")
 # ── Paths ─────────────────────────────────────────────────────────────────────
 REPO_ROOT   = Path(__file__).resolve().parent.parent
 CONFIG_FILE = REPO_ROOT / "websites-config.yml"
+
+
+def _set_r2_type_breakdown_fields(
+    target: Dict[str, Any],
+    by_type_bytes: Dict[str, int],
+    field_prefix: str,
+) -> None:
+    """Set flattened fields like `<prefix>{category}_bytes`."""
+    for cat in R2_TYPE_CATEGORIES:
+        target[f"{field_prefix}{cat}_bytes"] = int(by_type_bytes.get(cat) or 0)
 
 
 def list_excel_files(client, bucket: str, prefix: str) -> List[Dict]:
@@ -1402,6 +1413,10 @@ def main():
             "r2_file_count":  0,
             "r2_size_bytes":  0,
             "r2_daily_size":  0,
+            # Storage breakdown by file type (images/json/excel/...).
+            # Total bytes are "r2_*_bytes"; daily bytes are "r2_daily_*_bytes".
+            **{f"r2_{cat}_bytes": 0 for cat in R2_TYPE_CATEGORIES},
+            **{f"r2_daily_{cat}_bytes": 0 for cat in R2_TYPE_CATEGORIES},
             "checks_passed":  0,
             "checks_total":   0,
             "all_passed":     True,
@@ -1417,13 +1432,25 @@ def main():
         }
 
         partition_dt = partition_date_for_data_date(dates_to_check[0])
-        scraper_r2_inventory = count_scraper_r2_inventory(r2_client, bucket, r2_base)
-        scraper_daily_inventory = count_daily_r2_inventory(
+        scraper_r2_inventory = count_scraper_r2_inventory_by_type(
+            r2_client, bucket, r2_base
+        )
+        scraper_daily_inventory = count_daily_r2_inventory_by_type(
             r2_client, bucket, r2_base, partition_dt
         )
         scraper_result["r2_file_count"] = scraper_r2_inventory["objects"]
         scraper_result["r2_size_bytes"] = scraper_r2_inventory["size_bytes"]
         scraper_result["r2_daily_size"] = scraper_daily_inventory["size_bytes"]
+        _set_r2_type_breakdown_fields(
+            scraper_result,
+            scraper_r2_inventory["by_type_bytes"],
+            field_prefix="r2_",
+        )
+        _set_r2_type_breakdown_fields(
+            scraper_result,
+            scraper_daily_inventory["by_type_bytes"],
+            field_prefix="r2_daily_",
+        )
 
         all_xlsx: List[Dict] = []
         excel_downloads: List[tuple] = []
@@ -1604,15 +1631,31 @@ def main():
     )
 
     full_report["r2_daily_size"] = sum(r.get("r2_daily_size") or 0 for r in all_results)
+    for cat in R2_TYPE_CATEGORIES:
+        full_report[f"total_r2_daily_{cat}_bytes"] = sum(
+            (r.get(f"r2_daily_{cat}_bytes") or 0) for r in all_results
+        )
 
     site_r2_prefix = site.get("r2_prefix", "").strip("/")
     if site_r2_prefix:
-        site_r2_inventory = count_site_r2_inventory(r2_client, bucket, site_r2_prefix)
+        site_r2_inventory = count_site_r2_inventory_by_type(
+            r2_client, bucket, site_r2_prefix
+        )
         full_report["total_r2_files"] = site_r2_inventory["objects"]
         full_report["total_r2_size_bytes"] = site_r2_inventory["size_bytes"]
+        _set_r2_type_breakdown_fields(
+            full_report,
+            site_r2_inventory["by_type_bytes"],
+            field_prefix="total_r2_",
+        )
     else:
         full_report["total_r2_files"] = sum(r.get("r2_file_count") or 0 for r in all_results)
         full_report["total_r2_size_bytes"] = sum(r.get("r2_size_bytes") or 0 for r in all_results)
+        # Totals when we don't have a site-wide prefix: sum across scrapers.
+        for cat in R2_TYPE_CATEGORIES:
+            full_report[f"total_r2_{cat}_bytes"] = sum(
+                (r.get(f"r2_{cat}_bytes") or 0) for r in all_results
+            )
 
     alerts = collect_alerts(all_results, listing_date_str)
     full_report["alerts"] = alerts

@@ -136,7 +136,7 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run "monitor-hub.yml" --repo "${{ github.repository }}"
+        run: gh workflow run "monitor-hub.yml" --ref "${{ github.ref_name }}" --repo "${{ github.repository }}"
 
   # ── Job 2: weekly stats refresh ───────────────────────────────────────────
   weekly-stats:
@@ -183,5 +183,5 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run "monitor-hub.yml" --repo "${{ github.repository }}"
+        run: gh workflow run "monitor-hub.yml" --ref "${{ github.ref_name }}" --repo "${{ github.repository }}"
 

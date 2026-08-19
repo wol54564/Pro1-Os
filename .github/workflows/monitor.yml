@@ -128,6 +128,8 @@ jobs:
 
       # ── Run inspector ─────────────────────────────────────────────────────
       - name: Run schema inspector
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python monitor/inspect_r2_schema.py ${{ steps.flags.outputs.flags }}
 
       # monitor_stats.yml is written directly to R2 by the script — no git commit needed.
@@ -171,6 +173,8 @@ jobs:
         run: pip install -r CFl_data/requirements.txt pyyaml
 
       - name: Refresh stats over last 7 days
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python monitor/inspect_r2_schema.py \
             --days-lookback 7 \

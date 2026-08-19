@@ -41,6 +41,21 @@ _SCHEDULE_LOOKBACK_DAYS = {
 }
 
 
+def split_workflow_names(value: str) -> List[str]:
+    """
+    Split a registry label into individual GitHub workflow names.
+
+    Handles combined pipeline labels such as
+    "Batch A → Batch B-1 → Batch B-2" stored as one string in site.yml/registry.
+    """
+    names: List[str] = []
+    for chunk in value.replace("→", ",").replace("->", ",").split(","):
+        name = chunk.strip().strip('"').strip("'")
+        if name and not is_monitor_workflow(name):
+            names.append(name)
+    return names
+
+
 def is_monitor_workflow(name: Optional[str]) -> bool:
     if not name:
         return False
@@ -77,12 +92,18 @@ def parse_workflow_entries(site: Dict) -> List[Dict[str, str]]:
         single = site.get("workflow_name")
         if single and not is_monitor_workflow(str(single)):
             if owner and default_repo:
-                return [{"name": str(single), "owner": owner, "repo": default_repo}]
+                names = split_workflow_names(str(single))
+                if not names:
+                    return []
+                return [
+                    {"name": name, "owner": owner, "repo": default_repo}
+                    for name in names
+                ]
         return []
 
     items: List[Any]
     if isinstance(raw, str):
-        items = [p.strip() for p in raw.replace("→", ",").split(",") if p.strip()]
+        items = split_workflow_names(raw)
     elif isinstance(raw, list):
         items = raw
     else:
@@ -91,21 +112,23 @@ def parse_workflow_entries(site: Dict) -> List[Dict[str, str]]:
     entries: List[Dict[str, str]] = []
     for item in items:
         if isinstance(item, str):
-            name = item.strip()
-            if not name or is_monitor_workflow(name):
+            names = split_workflow_names(item)
+            if not names:
                 continue
             if not owner or not default_repo:
                 continue
-            entries.append({"name": name, "owner": owner, "repo": default_repo})
+            for name in names:
+                entries.append({"name": name, "owner": owner, "repo": default_repo})
         elif isinstance(item, dict):
             name = (item.get("name") or item.get("workflow") or "").strip()
-            if not name or is_monitor_workflow(name):
+            if not name:
                 continue
             entry_owner = (item.get("owner") or item.get("github_username") or owner).strip()
             entry_repo = (item.get("repo") or default_repo).strip()
             if not entry_owner or not entry_repo:
                 continue
-            entries.append({"name": name, "owner": entry_owner, "repo": entry_repo})
+            for part in split_workflow_names(name):
+                entries.append({"name": part, "owner": entry_owner, "repo": entry_repo})
     return entries
 
 

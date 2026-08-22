@@ -145,7 +145,7 @@ async def scrape_subcategory(subcat):
                         if img_url:
                             path = (
                                 f"4sale-data/property/year={YEAR}/month={MONTH}/day={DAY}/"
-                                f"images/{slug}/{sub_slug}/{l['id']}_{idx}.jpg"
+                                f"images/{slug}/{sub_slug}/{l['id']}_{idx}.webp"
                             )
                             result = await R2.upload_image(img_url, path)
                             if result:
@@ -197,7 +197,7 @@ async def scrape_subcategory(subcat):
                         if img_url:
                             path = (
                                 f"4sale-data/property/year={YEAR}/month={MONTH}/day={DAY}/"
-                                f"images/{slug}/{biz_slug}/{record['id']}_{idx}.jpg"
+                                f"images/{slug}/{biz_slug}/{record['id']}_{idx}.webp"
                             )
                             result = await R2.upload_image(img_url, path)
                             if result:
@@ -232,7 +232,7 @@ async def scrape_subcategory(subcat):
                     if img_url:
                         path = (
                             f"4sale-data/property/year={YEAR}/month={MONTH}/day={DAY}/"
-                            f"images/{slug}/all/{l['id']}_{idx}.jpg"
+                            f"images/{slug}/all/{l['id']}_{idx}.webp"
                         )
                         result = await R2.upload_image(img_url, path)
                         if result:

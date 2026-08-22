@@ -4,6 +4,7 @@ import asyncio
 from io import BytesIO
 import os
 import logging
+from scraper_utils import convert_image_to_webp, WEBP_CONTENT_TYPE, WEBP_EXT
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +41,10 @@ class R2Uploader:
                     async with session.get(url) as resp:
                         if resp.status == 200:
                             content = await resp.read()
-                            file_obj = BytesIO(content)
+                            webp_data = convert_image_to_webp(content)
+                            file_obj = BytesIO(webp_data)
                             logger.debug(f"Uploading image to R2: {R2_path}")
-                            self.R2.upload_fileobj(file_obj, self.bucket_name, R2_path, ExtraArgs={"ContentType": "image/jpeg"})
+                            self.R2.upload_fileobj(file_obj, self.bucket_name, R2_path, ExtraArgs={"ContentType": WEBP_CONTENT_TYPE})
                             R2_url = f"r2://{self.bucket_name}/{R2_path}"
                             logger.debug(f"Image uploaded: {R2_url}")
                             return R2_url

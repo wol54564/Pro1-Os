@@ -120,7 +120,7 @@ class FurnitureScraperOrchestrator:
                                     if R2_path:
                                         R2_url = self.R2_helper.generate_R2_url(R2_path)
                                         R2_image_urls.append(R2_url)
-                                        logger.info(f"  Image {img_index}: {listing_id}_{img_index}.jpg [OK]")
+                                        logger.info(f"  Image {img_index}: {listing_id}_{img_index}.webp [OK]")
                                 
                                 await asyncio.sleep(0.1)
                             except Exception as e:

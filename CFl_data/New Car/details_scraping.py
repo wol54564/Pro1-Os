@@ -55,7 +55,7 @@ class DetailsScraping:
             "description": listing.get("description"),
             "link": type_url,
             "image": listing.get("images")[0] if listing.get("images") else None,
-            "image_filename": f"{listing.get('title')}_image_{listing.get('user_adv_id')}.jpg",
+            "image_filename": f"{listing.get('title')}_image_{listing.get('user_adv_id')}.webp",
             "price": listing.get("price"),
             "address": listing.get("district", {}).get("name"),
             "views_no": listing.get("user_view_count"),

@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 import mimetypes
+from scraper_utils import convert_image_to_webp, WEBP_CONTENT_TYPE, WEBP_EXT
 
 logger = logging.getLogger(__name__)
 
@@ -147,16 +148,10 @@ class R2Helper:
         """
         partition = self.get_partition_prefix(target_date)
         
-        # Determine file extension from URL
-        extension = 'jpg'
-        if '.' in image_url.split('/')[-1]:
-            extension = image_url.split('.')[-1]
-        
-        # Create R2 key with structure: partition/images/category_name/subcategory/listing_id_image_index.ext
         if category_name:
-            R2_key = f"{partition}/images/{category_name}/{subcategory_slug}/{listing_id}_{image_index}.{extension}"
+            R2_key = f"{partition}/images/{category_name}/{subcategory_slug}/{listing_id}_{image_index}.webp"
         else:
-            R2_key = f"{partition}/images/{subcategory_slug}/{listing_id}_{image_index}.{extension}"
+            R2_key = f"{partition}/images/{subcategory_slug}/{listing_id}_{image_index}.webp"
         
         try:
             logger.debug(f"Uploading image to R2: {R2_key}...")
@@ -164,8 +159,8 @@ class R2Helper:
             self.R2_client.put_object(
                 Bucket=self.bucket_name,
                 Key=R2_key,
-                Body=image_data,
-                ContentType=f'image/{extension}'
+                Body=convert_image_to_webp(image_data),
+                ContentType=WEBP_CONTENT_TYPE
             )
             
             logger.debug(f"[OK] Image uploaded: {R2_key}")

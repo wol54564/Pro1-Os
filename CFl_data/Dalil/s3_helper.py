@@ -8,6 +8,7 @@ import mimetypes
 import requests
 import asyncio
 from urllib.parse import urlparse
+from scraper_utils import convert_image_to_webp, WEBP_CONTENT_TYPE, WEBP_EXT
 
 logger = logging.getLogger(__name__)
 
@@ -204,19 +205,16 @@ class R2Helper:
         
         for attempt in range(retries):
             try:
-                # Download image
-                response = requests.get(image_url, timeout=30, stream=True)
+                response = requests.get(image_url, timeout=30)
                 response.raise_for_status()
-                
-                # Determine content type from response or URL
-                content_type = response.headers.get('Content-Type', 'image/jpeg')
-                
-                # Upload to R2
+                webp_data = convert_image_to_webp(response.content)
+
+                from io import BytesIO
                 self.R2_client.upload_fileobj(
-                    response.raw,
+                    BytesIO(webp_data),
                     self.bucket_name,
                     R2_key,
-                    ExtraArgs={'ContentType': content_type}
+                    ExtraArgs={'ContentType': WEBP_CONTENT_TYPE}
                 )
                 
                 logger.debug(f"Uploaded image to R2: {R2_key}")

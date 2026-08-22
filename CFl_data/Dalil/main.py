@@ -11,6 +11,7 @@ from json_scraper import DalilJsonScraper
 from s3_helper import R2Helper
 import re
 from urllib.parse import urlparse
+from scraper_utils import convert_image_to_webp, WEBP_CONTENT_TYPE, WEBP_EXT
 
 logging.basicConfig(
     level=logging.INFO,
@@ -81,13 +82,7 @@ class DalilScraperOrchestrator:
         # Extract extension from URL
         parsed = urlparse(url)
         path = parsed.path
-        ext = Path(path).suffix
-        
-        if not ext or len(ext) > 5:
-            ext = '.jpg'  # Default extension
-        
-        # Clean extension
-        ext = ext.lower()
+        ext = WEBP_EXT
         
         # Create filename
         filename = f"business_{business_id}_image_{index}{ext}"

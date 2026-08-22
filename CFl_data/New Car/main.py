@@ -17,6 +17,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scraper_utils import get_random_headers, random_delay, rotate_user_agent, configure_session_proxy, create_session
+from scraper_utils import convert_image_to_webp, WEBP_CONTENT_TYPE, WEBP_EXT
 
 logging.basicConfig(
     level=logging.INFO,
@@ -57,7 +58,8 @@ class MainScraper:
         self.R2_client.put_object(
             Bucket=self.R2_bucket,
             Key=R2_path,
-            Body=data_bytes
+            Body=data_bytes,
+            ContentType=WEBP_CONTENT_TYPE,
         )
         return f"R2://{self.R2_bucket}/{R2_path}"
 
@@ -80,7 +82,7 @@ class MainScraper:
                 print(f"[IMG FAIL] {url} Status={response.status_code}")
                 return None
 
-            img_bytes = response.content
+            img_bytes = convert_image_to_webp(response.content)
 
             await self.upload_bytes_to_R2(img_bytes, R2_path)
             return R2_path

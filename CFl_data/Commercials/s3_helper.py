@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 import mimetypes
+from scraper_utils import convert_image_to_webp, WEBP_CONTENT_TYPE, WEBP_EXT
 
 logger = logging.getLogger(__name__)
 
@@ -160,39 +161,19 @@ class R2Helper:
             Full R2 path or None if failed
         """
         try:
-            # Extract file extension from URL
-            ext = '.jpg'
-            if '.' in image_url:
-                ext = '.' + image_url.rsplit('.', 1)[-1].split('?')[0]
-                if ext not in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
-                    ext = '.jpg'
-            
-            # Create filename
             if ad_id:
-                filename = f"{ad_id}_{img_index}{ext}"
+                filename = f"{ad_id}_{img_index}.webp"
             else:
-                filename = f"{img_index}{ext}"
-            
-            # Get partition prefix with images subfolder and category subfolder
+                filename = f"{img_index}.webp"
+
             partition_prefix = self.get_partition_prefix(target_date, subfolder=f'images/{category_slug}')
             R2_key = f"{partition_prefix}/{filename}"
-            
-            # Detect content type
-            content_type_map = {
-                '.jpg': 'image/jpeg',
-                '.jpeg': 'image/jpeg',
-                '.png': 'image/png',
-                '.gif': 'image/gif',
-                '.webp': 'image/webp'
-            }
-            content_type = content_type_map.get(ext, 'image/jpeg')
-            
-            # Upload image
+
             self.R2_client.put_object(
                 Bucket=self.bucket_name,
                 Key=R2_key,
-                Body=image_data,
-                ContentType=content_type
+                Body=convert_image_to_webp(image_data),
+                ContentType=WEBP_CONTENT_TYPE
             )
             
             logger.debug(f"[OK] Uploaded image to {R2_key}")

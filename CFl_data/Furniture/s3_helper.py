@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 import mimetypes
+from scraper_utils import convert_image_to_webp, WEBP_CONTENT_TYPE, WEBP_EXT
 
 logger = logging.getLogger(__name__)
 
@@ -148,11 +149,7 @@ class R2Helper:
             R2 path or None if failed
         """
         try:
-            # Extract file extension from URL
-            ext = Path(image_url).suffix or '.jpg'
-            
-            # Create filename
-            filename = f"{listing_id}_{img_index}{ext}"
+            filename = f"{listing_id}_{img_index}.webp"
             
             # Create R2 path with partition
             partition = self.get_partition_prefix(target_date)
@@ -162,8 +159,8 @@ class R2Helper:
             self.R2_client.put_object(
                 Bucket=self.bucket_name,
                 Key=R2_key,
-                Body=image_data,
-                ContentType='image/jpeg'
+                Body=convert_image_to_webp(image_data),
+                ContentType=WEBP_CONTENT_TYPE
             )
             
             return R2_key

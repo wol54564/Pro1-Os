@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 import mimetypes
+from scraper_utils import convert_image_to_webp, WEBP_CONTENT_TYPE, WEBP_EXT
 
 logger = logging.getLogger(__name__)
 
@@ -151,20 +152,16 @@ class R2Helper:
             Full R2 path or None if failed
         """
         try:
-            # Determine file extension
-            ext = Path(image_url).suffix or '.jpg'
-            
-            # Build R2 key with partitioning and organization
             partition = self.get_partition_prefix(target_date)
-            filename = f"{listing_id}_{image_index}{ext}"
+            filename = f"{listing_id}_{image_index}.webp"
             R2_key = f"{partition}/images/{subcategory_slug}/{filename}"
             
             # Upload directly from memory
             self.R2_client.put_object(
                 Bucket=self.bucket_name,
                 Key=R2_key,
-                Body=image_data,
-                ContentType='image/jpeg'
+                Body=convert_image_to_webp(image_data),
+                ContentType=WEBP_CONTENT_TYPE
             )
             
             logger.debug(f"Uploaded image to R2://{self.bucket_name}/{R2_key}")

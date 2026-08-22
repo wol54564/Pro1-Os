@@ -22,10 +22,28 @@ import random
 import time
 import asyncio
 import logging
+from io import BytesIO
 from typing import Optional
 from curl_cffi import requests as curl_requests
+from PIL import Image
+
+WEBP_QUALITY = 50
+WEBP_CONTENT_TYPE = 'image/webp'
+WEBP_EXT = '.webp'
 
 logger = logging.getLogger(__name__)
+
+
+def convert_image_to_webp(image_data: bytes, quality: int = WEBP_QUALITY) -> bytes:
+    """Convert downloaded image bytes (JPEG, PNG, etc.) to WebP."""
+    with Image.open(BytesIO(image_data)) as img:
+        if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
+            img = img.convert('RGBA')
+        else:
+            img = img.convert('RGB')
+        buf = BytesIO()
+        img.save(buf, format='WEBP', quality=quality)
+        return buf.getvalue()
 
 
 # ── User-agent / header pools ─────────────────────────────────────────────────

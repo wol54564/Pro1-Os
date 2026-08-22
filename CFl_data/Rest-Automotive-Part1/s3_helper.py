@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 import mimetypes
+from scraper_utils import convert_image_to_webp, WEBP_CONTENT_TYPE, WEBP_EXT
 
 logger = logging.getLogger(__name__)
 
@@ -305,7 +306,7 @@ class R2Helper:
             image_data: Image bytes to upload
             subcategory_slug: Category slug for organization
             target_date: Date for partitioning
-            listing_id: Listing ID for image naming (if provided, image will be named as listing_id_index.jpg)
+            listing_id: Listing ID for image naming (if provided, image will be named as listing_id_index.webp)
             image_index: Index of image in the list (0, 1, 2, etc.)
             folder_name: Folder name in R2 (defaults to 'rest-automotive-part1')
             category_name: Parent category name (e.g., 'Watercraft') for folder structure
@@ -316,12 +317,14 @@ class R2Helper:
         try:
             # Generate filename based on listing_id if provided
             if listing_id:
-                filename = f"{listing_id}_{image_index}.jpg"
+                filename = f"{listing_id}_{image_index}.webp"
             else:
                 # Fallback: extract filename from URL
                 filename = image_url.split('/')[-1]
                 if not filename:
-                    filename = f"image_{int(__import__('time').time())}.jpg"
+                    filename = f"image_{int(__import__('time').time())}.webp"
+                else:
+                    filename = f"{Path(filename.split('?')[0]).stem}.webp"
             
             partition = self.get_partition_prefix(target_date, folder_name)
             
@@ -339,8 +342,8 @@ class R2Helper:
                     self.R2_client.put_object(
                         Bucket=self.bucket_name,
                         Key=R2_key,
-                        Body=image_data,
-                        ContentType='image/jpeg'
+                        Body=convert_image_to_webp(image_data),
+                        ContentType=WEBP_CONTENT_TYPE
                     )
                     
                     logger.info(f"[OK] Successfully uploaded: {filename}")

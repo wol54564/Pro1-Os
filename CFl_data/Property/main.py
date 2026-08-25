@@ -11,7 +11,7 @@ from s3_uploader import R2Uploader
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from scraper_utils import get_random_headers, random_delay, rotate_user_agent, configure_session_proxy, create_session
+from scraper_utils import get_random_headers, random_delay, rotate_user_agent, configure_session_proxy, create_session, property_downloads_images
 
 # Setup logging
 logging.basicConfig(
@@ -126,6 +126,7 @@ async def scrape_subcategory(subcat):
             sub_url = f"https://www.q84sale.com/ar/property/{slug}/{sub_slug}/{{}}"
 
             logger.info(f"Processing {sub_name} ({total_pages} pages)")
+            download_images = property_downloads_images(slug, sub_slug)
 
             for page_no in range(1, total_pages + 1):
                 scraper = PropertyDetailsScraper(sub_url.format(page_no))
@@ -140,16 +141,17 @@ async def scrape_subcategory(subcat):
 
                 for l in listings:
                     R2_paths = []
-                    for idx, img in enumerate(l.get("images", [])):
-                        img_url = img if isinstance(img, str) else img.get("url", "")
-                        if img_url:
-                            path = (
-                                f"4sale-data/property/year={YEAR}/month={MONTH}/day={DAY}/"
-                                f"images/{slug}/{sub_slug}/{l['id']}_{idx}.webp"
-                            )
-                            result = await R2.upload_image(img_url, path)
-                            if result:
-                                R2_paths.append(path)
+                    if download_images:
+                        for idx, img in enumerate(l.get("images", [])):
+                            img_url = img if isinstance(img, str) else img.get("url", "")
+                            if img_url:
+                                path = (
+                                    f"4sale-data/property/year={YEAR}/month={MONTH}/day={DAY}/"
+                                    f"images/{slug}/{sub_slug}/{l['id']}_{idx}.webp"
+                                )
+                                result = await R2.upload_image(img_url, path)
+                                if result:
+                                    R2_paths.append(path)
                     l["r2_images_paths"] = R2_paths
 
                 results.extend(listings)
@@ -192,17 +194,6 @@ async def scrape_subcategory(subcat):
                     record["sheet"] = biz_name
 
                     R2_paths = []
-                    for idx, img in enumerate(record.get("images", [])):
-                        img_url = img if isinstance(img, str) else img.get("url", "")
-                        if img_url:
-                            path = (
-                                f"4sale-data/property/year={YEAR}/month={MONTH}/day={DAY}/"
-                                f"images/{slug}/{biz_slug}/{record['id']}_{idx}.webp"
-                            )
-                            result = await R2.upload_image(img_url, path)
-                            if result:
-                                R2_paths.append(path)
-
                     record["r2_images_paths"] = R2_paths
                     results.append(record)
 
@@ -213,6 +204,7 @@ async def scrape_subcategory(subcat):
     else:
         total_pages = page_props.get("totalPages", 1)
         logger.info(f"No subcategories. Processing {total_pages} pages")
+        download_images = property_downloads_images(slug)
 
         for page_no in range(1, total_pages + 1):
             scraper = PropertyDetailsScraper(base_url.format(page_no))
@@ -227,16 +219,17 @@ async def scrape_subcategory(subcat):
 
             for l in listings:
                 R2_paths = []
-                for idx, img in enumerate(l.get("images", [])):
-                    img_url = img if isinstance(img, str) else img.get("url", "")
-                    if img_url:
-                        path = (
-                            f"4sale-data/property/year={YEAR}/month={MONTH}/day={DAY}/"
-                            f"images/{slug}/all/{l['id']}_{idx}.webp"
-                        )
-                        result = await R2.upload_image(img_url, path)
-                        if result:
-                            R2_paths.append(path)
+                if download_images:
+                    for idx, img in enumerate(l.get("images", [])):
+                        img_url = img if isinstance(img, str) else img.get("url", "")
+                        if img_url:
+                            path = (
+                                f"4sale-data/property/year={YEAR}/month={MONTH}/day={DAY}/"
+                                f"images/{slug}/all/{l['id']}_{idx}.webp"
+                            )
+                            result = await R2.upload_image(img_url, path)
+                            if result:
+                                R2_paths.append(path)
                 l["r2_images_paths"] = R2_paths
 
             results.extend(listings)

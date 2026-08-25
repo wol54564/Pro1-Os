@@ -11,7 +11,9 @@ from json_scraper import DalilJsonScraper
 from s3_helper import R2Helper
 import re
 from urllib.parse import urlparse
-from scraper_utils import convert_image_to_webp, WEBP_CONTENT_TYPE, WEBP_EXT
+from scraper_utils import convert_image_to_webp, WEBP_CONTENT_TYPE, WEBP_EXT, scraper_downloads_images
+
+DOWNLOAD_IMAGES = scraper_downloads_images('dalil')
 
 logging.basicConfig(
     level=logging.INFO,
@@ -293,25 +295,28 @@ class DalilScraperOrchestrator:
         
         try:
             # Download and upload images for each category
-            logger.info("\n" + "="*80)
-            logger.info("DOWNLOADING AND UPLOADING IMAGES")
-            logger.info("="*80 + "\n")
-            
-            for category_data in categories_data:
-                if category_data.get("businesses"):
-                    await self.download_and_upload_images(
-                        category_data["businesses"],
-                        category_data["category_slug"]
-                    )
-                    
-                    # Count images
-                    for business in category_data["businesses"]:
-                        if business.get("r2_images_paths_json"):
-                            try:
-                                images = json.loads(business["r2_images_paths_json"])
-                                upload_summary["total_images"] += len(images)
-                            except:
-                                pass
+            if DOWNLOAD_IMAGES:
+                logger.info("\n" + "="*80)
+                logger.info("DOWNLOADING AND UPLOADING IMAGES")
+                logger.info("="*80 + "\n")
+                
+                for category_data in categories_data:
+                    if category_data.get("businesses"):
+                        await self.download_and_upload_images(
+                            category_data["businesses"],
+                            category_data["category_slug"]
+                        )
+                        
+                        # Count images
+                        for business in category_data["businesses"]:
+                            if business.get("r2_images_paths_json"):
+                                try:
+                                    images = json.loads(business["r2_images_paths_json"])
+                                    upload_summary["total_images"] += len(images)
+                                except:
+                                    pass
+            else:
+                logger.info("Image download disabled for Dalil scraper — skipping images")
             
             # Create Excel file
             logger.info("\n" + "="*80)

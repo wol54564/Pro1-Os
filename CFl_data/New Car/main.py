@@ -17,7 +17,9 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scraper_utils import get_random_headers, random_delay, rotate_user_agent, configure_session_proxy, create_session
-from scraper_utils import convert_image_to_webp, WEBP_CONTENT_TYPE, WEBP_EXT
+from scraper_utils import convert_image_to_webp, WEBP_CONTENT_TYPE, WEBP_EXT, scraper_downloads_images
+
+DOWNLOAD_IMAGES = scraper_downloads_images('new-car')
 
 logging.basicConfig(
     level=logging.INFO,
@@ -138,8 +140,7 @@ class MainScraper:
                                 img_url = car_detail.get("image")
                                 img_file = car_detail.get("image_filename")
 
-                                if img_url and img_file:
-                                    # Use requests-based image download
+                                if img_url and img_file and DOWNLOAD_IMAGES:
                                     R2_img_path = await self.download_image(
                                         img_url, brand_name, img_file
                                     )

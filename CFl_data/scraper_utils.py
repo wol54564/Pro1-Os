@@ -46,6 +46,40 @@ def convert_image_to_webp(image_data: bytes, quality: int = WEBP_QUALITY) -> byt
         return buf.getvalue()
 
 
+# ── Image download policy ─────────────────────────────────────────────────────
+# Only these scrapers download images for all listings.
+IMAGE_DOWNLOAD_SCRAPERS = frozenset({
+    'commercials',
+    'contracting',
+    'furniture',
+    'services',
+    'wanted-cars',
+    'rest-automotive-part2',
+})
+
+# Property: only these URL paths download images.
+PROPERTY_IMAGE_TOP_SLUGS = frozenset({'property-services'})
+PROPERTY_IMAGE_NESTED = frozenset({
+    ('for-rent', 'wanted-property-for-rent'),
+    ('for-sale', 'company'),
+})
+
+
+def scraper_downloads_images(scraper_key: str) -> bool:
+    """Return True if this scraper should download listing images."""
+    normalized = scraper_key.lower().replace(' ', '-').replace('_', '-')
+    return normalized in IMAGE_DOWNLOAD_SCRAPERS
+
+
+def property_downloads_images(slug: str, sub_slug: Optional[str] = None) -> bool:
+    """Return True if this property subcategory path should download images."""
+    if sub_slug is None and slug in PROPERTY_IMAGE_TOP_SLUGS:
+        return True
+    if sub_slug and (slug, sub_slug) in PROPERTY_IMAGE_NESTED:
+        return True
+    return False
+
+
 # ── User-agent / header pools ─────────────────────────────────────────────────
 
 USER_AGENTS = [

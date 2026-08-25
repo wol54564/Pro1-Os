@@ -14,6 +14,13 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
+
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from scraper_utils import scraper_downloads_images
+
+DOWNLOAD_IMAGES = scraper_downloads_images('education')
+
 logger = logging.getLogger(__name__)
 
 
@@ -105,7 +112,7 @@ class EducationScraperOrchestrator:
                     
                     logger.info(f"Listing {slug} (ID: {listing_id}): {len(images)} images available")
                     
-                    if images:
+                    if DOWNLOAD_IMAGES and images:
                         logger.info(f"Processing {len(images)} images for {slug} (ID: {listing_id})...")
                         R2_image_urls = []
                         

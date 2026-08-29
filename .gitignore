@@ -52,4 +52,9 @@ monitor/sample/*
 CFl_data/backfill-data/backfill_utils.py
 CFl_data/backfill-data/run_backfill.py
 validation/data sample/*
-
+*.docx
+CFl_data/CFL_DATA.md
+CFl_data/WEBSITE_BEHAVIOR_ANALYSIS.txt
+CFl_data/WEBSITE_BEHAVIOR_ANALYSIS.md
+CFl_data/MONITOR_SYSTEM.md
+CFl_data/MONITOR_4SALE.md

@@ -1,0 +1,77 @@
+name: "R2 Image Cleanup"
+
+# Deletes listing images older than the retention window from Cloudflare R2.
+# JSON / Excel scraper outputs are never touched (see CFl_data/cleanup_old_images.py).
+
+on:
+  # Weekly cleanup — Sunday 02:00 UTC (off-peak for daily scrapers)
+  schedule:
+    - cron: "0 2 * * 0"
+
+  workflow_dispatch:
+    inputs:
+      retention_days:
+        description: "Keep images from the last N days (inclusive)"
+        required: false
+        default: "7"
+      dry_run:
+        description: "Preview only — do not delete"
+        type: boolean
+        default: true
+      categories:
+        description: "Space-separated category slugs (blank = all). e.g. electronics furniture"
+        required: false
+        default: ""
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PYTHONUTF8: "1"
+
+jobs:
+  cleanup-images:
+    name: Delete stale R2 images
+    runs-on: ubuntu-22.04
+    env:
+      CF_R2_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+      CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+      CF_R2_ENDPOINT_URL: ${{ secrets.CF_R2_ENDPOINT_URL }}
+      CF_R2_BUCKET_NAME: ${{ secrets.CF_R2_BUCKET_NAME }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r CFl_data/requirements.txt
+
+      - name: Resolve run mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "execute=true" >> "$GITHUB_OUTPUT"
+            echo "Scheduled run → will DELETE stale images"
+          elif [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "execute=false" >> "$GITHUB_OUTPUT"
+            echo "Manual dry-run → preview only"
+          else
+            echo "execute=true" >> "$GITHUB_OUTPUT"
+            echo "Manual run → will DELETE stale images"
+          fi
+
+      - name: Run image cleanup
+        run: |
+          ARGS=(--retention-days "${{ inputs.retention_days || '7' }}")
+          CATS="${{ inputs.categories }}"
+          if [ -n "$CATS" ]; then
+            # shellcheck disable=SC2206
+            ARGS+=(--categories $CATS)
+          fi
+          if [ "${{ steps.mode.outputs.execute }}" = "true" ]; then
+            ARGS+=(--execute)
+          fi
+          python CFl_data/cleanup_old_images.py "${ARGS[@]}"

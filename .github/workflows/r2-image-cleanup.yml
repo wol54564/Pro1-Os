@@ -1,25 +1,28 @@
 name: "R2 Image Cleanup"
 
-# Deletes listing images older than the retention window from Cloudflare R2.
-# JSON / Excel scraper outputs are never touched (see CFl_data/cleanup_old_images.py).
+# Deletes leftover listing images for scrapers that no longer download images.
+# Active image categories are never touched:
+#   commercials, contracting, furniture, services, wanted-cars,
+#   rest-automotive-part2, property
+# JSON / Excel outputs are never touched (see CFl_data/cleanup_old_images.py).
 
 on:
-  # Weekly cleanup — Sunday 02:00 UTC (off-peak for daily scrapers)
+  # Weekly cleanup — Sunday 02:00 UTC
   schedule:
     - cron: "0 2 * * 0"
 
   workflow_dispatch:
     inputs:
       retention_days:
-        description: "Keep images from the last N days (inclusive)"
+        description: "Only delete images older than N days (blank = delete all leftover images in no-image categories)"
         required: false
-        default: "7"
+        default: ""
       dry_run:
         description: "Preview only — do not delete"
         type: boolean
         default: true
       categories:
-        description: "Space-separated category slugs (blank = all). e.g. electronics furniture"
+        description: "Space-separated R2 category slugs (blank = all no-longer-image categories). e.g. camping electronics"
         required: false
         default: ""
 
@@ -29,7 +32,7 @@ env:
 
 jobs:
   cleanup-images:
-    name: Delete stale R2 images
+    name: Delete leftover R2 images (no-image scrapers)
     runs-on: ubuntu-22.04
     env:
       CF_R2_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
@@ -54,18 +57,23 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
             echo "execute=true" >> "$GITHUB_OUTPUT"
-            echo "Scheduled run → will DELETE stale images"
+            echo "Scheduled run → will DELETE leftover images"
           elif [ "${{ inputs.dry_run }}" = "true" ]; then
             echo "execute=false" >> "$GITHUB_OUTPUT"
             echo "Manual dry-run → preview only"
           else
             echo "execute=true" >> "$GITHUB_OUTPUT"
-            echo "Manual run → will DELETE stale images"
+            echo "Manual run → will DELETE leftover images"
           fi
 
       - name: Run image cleanup
+        working-directory: CFl_data
         run: |
-          ARGS=(--retention-days "${{ inputs.retention_days || '7' }}")
+          ARGS=()
+          RETENTION="${{ inputs.retention_days }}"
+          if [ -n "$RETENTION" ]; then
+            ARGS+=(--retention-days "$RETENTION")
+          fi
           CATS="${{ inputs.categories }}"
           if [ -n "$CATS" ]; then
             # shellcheck disable=SC2206
@@ -74,4 +82,4 @@ jobs:
           if [ "${{ steps.mode.outputs.execute }}" = "true" ]; then
             ARGS+=(--execute)
           fi
-          python CFl_data/cleanup_old_images.py "${ARGS[@]}"
+          python cleanup_old_images.py "${ARGS[@]}"

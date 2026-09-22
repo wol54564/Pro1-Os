@@ -1,0 +1,85 @@
+name: "S3 Image Cleanup"
+
+# Deletes leftover listing images for scrapers that no longer download images.
+# Active image categories are never touched:
+#   commercials, contracting, furniture, services, wanted-cars,
+#   rest-automotive-part2, property
+# JSON / Excel outputs are never touched (see CFl_data/cleanup_old_images_s3.py).
+
+on:
+  # Weekly cleanup — Sunday 03:00 UTC (after R2 cleanup at 02:00)
+  schedule:
+    - cron: "0 3 * * 0"
+
+  workflow_dispatch:
+    inputs:
+      retention_days:
+        description: "Only delete images older than N days (blank = delete all leftover images in no-image categories)"
+        required: false
+        default: ""
+      dry_run:
+        description: "Preview only — do not delete"
+        type: boolean
+        default: true
+      categories:
+        description: "Space-separated S3 category slugs (blank = all no-longer-image categories). e.g. camping electronics"
+        required: false
+        default: ""
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PYTHONUTF8: "1"
+
+jobs:
+  cleanup-images:
+    name: Delete leftover S3 images (no-image scrapers)
+    runs-on: ubuntu-22.04
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: us-east-1
+      S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r CFl_data/requirements.txt
+
+      - name: Resolve run mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "execute=true" >> "$GITHUB_OUTPUT"
+            echo "Scheduled run → will DELETE leftover images"
+          elif [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "execute=false" >> "$GITHUB_OUTPUT"
+            echo "Manual dry-run → preview only"
+          else
+            echo "execute=true" >> "$GITHUB_OUTPUT"
+            echo "Manual run → will DELETE leftover images"
+          fi
+
+      - name: Run image cleanup
+        working-directory: CFl_data
+        run: |
+          ARGS=()
+          RETENTION="${{ inputs.retention_days }}"
+          if [ -n "$RETENTION" ]; then
+            ARGS+=(--retention-days "$RETENTION")
+          fi
+          CATS="${{ inputs.categories }}"
+          if [ -n "$CATS" ]; then
+            # shellcheck disable=SC2206
+            ARGS+=(--categories $CATS)
+          fi
+          if [ "${{ steps.mode.outputs.execute }}" = "true" ]; then
+            ARGS+=(--execute)
+          fi
+          python cleanup_old_images_s3.py "${ARGS[@]}"

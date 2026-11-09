@@ -47,8 +47,12 @@ from monitor_r2 import (
     _normalize_schedule,
 )
 from github_workflows import (
+    format_github_usernames,
+    format_repos,
+    format_root_gmails,
     format_workflow_label,
     is_monitor_workflow,
+    resolve_github_accounts,
     resolve_workflow_names,
 )
 
@@ -104,6 +108,7 @@ SITE_DAILY_COLS = [
     "country",
     "repo",
     "github_username",
+    "root_gmail",
     "run_place",
     "workflow_name",
     "workflow_run_number",
@@ -144,6 +149,15 @@ SITE_DAILY_COLS = [
     "inspect_date",
     "report_fallback",
     "uses_proxy",
+]
+
+SITE_GITHUB_ACCOUNTS_COLS = [
+    "hub_partition_date",
+    "site_id",
+    "account_index",
+    "github_username",
+    "root_gmail",
+    "repo",
 ]
 
 SCRAPER_DAILY_COLS = [
@@ -698,12 +712,13 @@ def _is_generic_sheet_name(sheet_name: str) -> bool:
 def flatten_hub(
     merged: Dict,
     registry: Optional[Dict] = None,
-) -> Tuple[Dict, List[Dict], List[Dict], List[Dict], List[Dict], List[Dict]]:
+) -> Tuple[Dict, List[Dict], List[Dict], List[Dict], List[Dict], List[Dict], List[Dict]]:
     """
     Flatten all-sites.json into hub_daily, site_daily, scraper_daily, scraper_hourly_daily,
-    and alerts rows.
+    scraper_subcategory_daily, alerts, and site_github_accounts rows.
 
-    Returns (hub_row, site_rows, scraper_rows, hourly_rows, subcategory_rows, alert_rows).
+    Returns
+    (hub_row, site_rows, scraper_rows, hourly_rows, subcategory_rows, alert_rows, account_rows).
     """
     hub_partition = merged.get("run_date")
     if not hub_partition:
@@ -747,6 +762,7 @@ def flatten_hub(
     scraper_hourly_rows: List[Dict] = []
     subcategory_rows: List[Dict] = []
     alert_rows: List[Dict] = []
+    account_rows: List[Dict] = []
 
     for site in merged.get("sites", []):
         site_id = site.get("site_id") or site.get("folder")
@@ -770,6 +786,45 @@ def flatten_hub(
             report, reg, site.get("status"), run_place
         )
 
+        # Prefer registry site.yml; fall back to report github_run accounts.
+        account_source = dict(reg) if reg else {}
+        if not account_source:
+            account_source = {
+                "github_username": site.get("github_username") or report.get("github_username"),
+                "root_gmail": (
+                    site.get("root_gmail")
+                    or report.get("root_gmail")
+                    or report.get("github_gmail")
+                    or github_run.get("root_gmail")
+                    or github_run.get("github_gmail")
+                ),
+                "repo": site.get("repo") or report.get("repo"),
+                "github_accounts": (
+                    site.get("github_accounts")
+                    or report.get("github_accounts")
+                    or github_run.get("github_accounts")
+                ),
+                "workflows": site.get("workflows") or report.get("workflows"),
+            }
+        else:
+            # Keep workflows so multi-repo sites can expand from workflow entries.
+            if not account_source.get("workflows"):
+                account_source["workflows"] = site.get("workflows") or report.get("workflows")
+
+        accounts = resolve_github_accounts(account_source)
+        if not accounts and github_run.get("github_accounts"):
+            accounts = resolve_github_accounts(
+                {"github_accounts": github_run.get("github_accounts")}
+            )
+
+        github_username = format_github_usernames(account_source) or format_github_usernames(
+            {"github_accounts": accounts}
+        )
+        root_gmail = format_root_gmails(account_source) or format_root_gmails(
+            {"github_accounts": accounts}
+        )
+        repo = format_repos(account_source) or format_repos({"github_accounts": accounts})
+
         site_rows.append({
             "hub_partition_date": hub_partition,
             "site_id": site_id,
@@ -777,8 +832,9 @@ def flatten_hub(
             "display_name": site.get("display_name"),
             "website": site.get("website"),
             "country": site.get("country"),
-            "repo": site.get("repo") or reg.get("repo"),
-            "github_username": reg.get("github_username"),
+            "repo": repo,
+            "github_username": github_username,
+            "root_gmail": root_gmail,
             "run_place": run_place,
             "workflow_name": workflow_meta["workflow_name"],
             "workflow_run_number": workflow_meta["workflow_run_number"],
@@ -816,6 +872,17 @@ def flatten_hub(
             "report_fallback": bool(site.get("report_fallback", False)),
             "uses_proxy": _resolve_uses_proxy(site, reg, report),
         })
+
+        for idx, account in enumerate(accounts):
+            account_rows.append({
+                "hub_partition_date": hub_partition,
+                "site_id": site_id,
+                "account_index": idx,
+                "github_username": account.get("github_username") or None,
+                "root_gmail": account.get("root_gmail") or None,
+                "repo": account.get("repo") or None,
+            })
+
         for scraper_name, sr in _scraper_entries(report):
             scraper_label = sr.get("scraper") or scraper_name
             scraper_rows.append({
@@ -952,7 +1019,15 @@ def flatten_hub(
 
     hub_row.update(_hub_request_totals(site_rows))
 
-    return hub_row, site_rows, scraper_rows, scraper_hourly_rows, subcategory_rows, alert_rows
+    return (
+        hub_row,
+        site_rows,
+        scraper_rows,
+        scraper_hourly_rows,
+        subcategory_rows,
+        alert_rows,
+        account_rows,
+    )
 
 
 def _empty_df(columns: List[str]) -> pd.DataFrame:
@@ -966,10 +1041,16 @@ def _to_dataframes(
     scraper_hourly_rows: List[Dict],
     subcategory_rows: List[Dict],
     alert_rows: List[Dict],
+    account_rows: List[Dict],
 ) -> Dict[str, pd.DataFrame]:
     return {
         "hub_daily": pd.DataFrame([hub_row]) if hub_row else _empty_df(HUB_DAILY_COLS),
         "site_daily": pd.DataFrame(site_rows) if site_rows else _empty_df(SITE_DAILY_COLS),
+        "site_github_accounts": (
+            pd.DataFrame(account_rows)
+            if account_rows
+            else _empty_df(SITE_GITHUB_ACCOUNTS_COLS)
+        ),
         "scraper_daily": pd.DataFrame(scraper_rows) if scraper_rows else _empty_df(SCRAPER_DAILY_COLS),
         "scraper_hourly_daily": (
             pd.DataFrame(scraper_hourly_rows)
@@ -1053,12 +1134,23 @@ def export_partition(
             f"JSON run_date={merged.get('run_date')} differs from target partition {partition_date}"
         )
 
-    hub_row, site_rows, scraper_rows, scraper_hourly_rows, subcategory_rows, alert_rows = flatten_hub(merged, registry)
-    tables = _to_dataframes(hub_row, site_rows, scraper_rows, scraper_hourly_rows, subcategory_rows, alert_rows)
+    hub_row, site_rows, scraper_rows, scraper_hourly_rows, subcategory_rows, alert_rows, account_rows = flatten_hub(
+        merged, registry
+    )
+    tables = _to_dataframes(
+        hub_row,
+        site_rows,
+        scraper_rows,
+        scraper_hourly_rows,
+        subcategory_rows,
+        alert_rows,
+        account_rows,
+    )
 
     log.info(
         f"Partition {partition_date}: "
-        f"1 hub · {len(site_rows)} sites · {len(scraper_rows)} scrapers · "
+        f"1 hub · {len(site_rows)} sites · {len(account_rows)} github accounts · "
+        f"{len(scraper_rows)} scrapers · "
         f"{len(scraper_hourly_rows)} hourly rows · {len(subcategory_rows)} subcategories · {len(alert_rows)} alerts"
     )
 

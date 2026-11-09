@@ -41,6 +41,7 @@ from export_hub_tables import (
     SCRAPER_SUBCATEGORY_DAILY_COLS,
     SCRAPER_DAILY_COLS,
     SITE_DAILY_COLS,
+    SITE_GITHUB_ACCOUNTS_COLS,
 )
 from monitor_r2 import (
     MONITOR_SITES_ROOT,
@@ -62,6 +63,7 @@ log = logging.getLogger("push-motherduck")
 TABLE_COLUMNS: Dict[str, List[str]] = {
     "hub_daily": HUB_DAILY_COLS,
     "site_daily": SITE_DAILY_COLS,
+    "site_github_accounts": SITE_GITHUB_ACCOUNTS_COLS,
     "scraper_daily": SCRAPER_DAILY_COLS,
     "scraper_hourly_daily": SCRAPER_HOURLY_DAILY_COLS,
     "scraper_subcategory_daily": SCRAPER_SUBCATEGORY_DAILY_COLS,
@@ -71,6 +73,7 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
 TABLE_PRIMARY_KEYS: Dict[str, List[str]] = {
     "hub_daily": ["hub_partition_date"],
     "site_daily": ["hub_partition_date", "site_id"],
+    "site_github_accounts": ["hub_partition_date", "site_id", "account_index"],
     "scraper_daily": ["hub_partition_date", "site_id", "scraper"],
     "scraper_hourly_daily": ["hub_partition_date", "site_id", "scraper", "hour"],
     "scraper_subcategory_daily": [
@@ -132,6 +135,7 @@ SCHEMA_STATEMENTS = [
       country              VARCHAR,
       repo                 VARCHAR,
       github_username      VARCHAR,
+      root_gmail           VARCHAR,
       run_place            VARCHAR,
       workflow_name        VARCHAR,
       workflow_run_number  INTEGER,
@@ -173,6 +177,17 @@ SCHEMA_STATEMENTS = [
       report_fallback      BOOLEAN DEFAULT FALSE,
       uses_proxy           BOOLEAN,
       PRIMARY KEY (hub_partition_date, site_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS site_github_accounts (
+      hub_partition_date   DATE NOT NULL,
+      site_id              VARCHAR NOT NULL,
+      account_index        INTEGER NOT NULL,
+      github_username      VARCHAR NOT NULL,
+      root_gmail           VARCHAR,
+      repo                 VARCHAR,
+      PRIMARY KEY (hub_partition_date, site_id, account_index)
     )
     """,
     """
@@ -310,6 +325,8 @@ MIGRATION_STATEMENTS = [
     "ALTER TABLE scraper_daily ADD COLUMN IF NOT EXISTS metrics_source VARCHAR",
     "ALTER TABLE scraper_daily ADD COLUMN IF NOT EXISTS failed_items_summary VARCHAR",
     "ALTER TABLE site_daily ADD COLUMN IF NOT EXISTS uses_proxy BOOLEAN",
+    "ALTER TABLE site_daily ADD COLUMN IF NOT EXISTS root_gmail VARCHAR",
+    "ALTER TABLE site_github_accounts ADD COLUMN IF NOT EXISTS repo VARCHAR",
     "ALTER TABLE scraper_subcategory_daily ADD COLUMN IF NOT EXISTS ads_count INTEGER",
     "ALTER TABLE scraper_subcategory_daily ADD COLUMN IF NOT EXISTS sheet_rows INTEGER",
     "ALTER TABLE scraper_subcategory_daily ADD COLUMN IF NOT EXISTS sheets_count INTEGER",
@@ -370,7 +387,11 @@ def ensure_schema(con: duckdb.DuckDBPyConnection) -> None:
         con.execute(stmt)
     for stmt in MIGRATION_STATEMENTS:
         con.execute(stmt)
-    log.info("MotherDuck schema ready (hub_daily, site_daily, scraper_daily, scraper_subcategory_daily, alerts)")
+    log.info(
+        "MotherDuck schema ready "
+        "(hub_daily, site_daily, site_github_accounts, scraper_daily, "
+        "scraper_subcategory_daily, alerts)"
+    )
 
     try:
         db_name = con.execute("SELECT current_database()").fetchone()[0]

@@ -1668,12 +1668,12 @@ def main():
 
     validation_passed = all(r["all_passed"] for r in all_results) and bool(all_results)
     github_run = build_scraper_run_meta(site, report_date_str, run_started_at, validation_passed)
-    github_gmail = (site.get("github_gmail") or site.get("github_email") or "").strip()
-    if github_gmail:
-        github_run["github_gmail"] = github_gmail
     full_report["github_run"] = github_run
-    if github_gmail:
-        full_report["github_gmail"] = github_gmail
+    if github_run.get("root_gmail"):
+        full_report["root_gmail"] = github_run["root_gmail"]
+        full_report["github_gmail"] = github_run["root_gmail"]
+    if github_run.get("github_accounts"):
+        full_report["github_accounts"] = github_run["github_accounts"]
     full_report["run_place"] = full_report["github_run"].get("run_place")
 
     print_summary_table(all_results, error_summary)

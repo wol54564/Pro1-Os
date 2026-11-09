@@ -69,6 +69,205 @@ def is_monitor_workflow(name: Optional[str]) -> bool:
     return False
 
 
+def _scalar_str(value: Any) -> str:
+    """Coerce a config value to a single stripped string (first item if list)."""
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        for item in value:
+            text = str(item).strip() if item is not None else ""
+            if text:
+                return text
+        return ""
+    return str(value).strip()
+
+
+def _as_aligned_list(value: Any) -> List[str]:
+    """Normalize scalar/list config to a list of stripped strings (keeps empties for alignment)."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() if item is not None else "" for item in value]
+    text = str(value).strip()
+    return [text] if text else []
+
+
+def _aligned_value(values: List[str], index: int, total: int) -> str:
+    if index < len(values):
+        return values[index]
+    if len(values) == 1 and total == 1:
+        return values[0]
+    return ""
+
+
+def resolve_github_accounts(site: Dict) -> List[Dict[str, str]]:
+    """
+    Pair each github_username with its root_gmail and primary repo.
+
+    Supports:
+      github_accounts:
+        - github_username: foo
+          root_gmail: a@gmail.com
+          repo: MyRepo
+      github_username: foo                 # scalar
+      root_gmail: a@gmail.com
+      repo: MyRepo
+      github_username: [a, b]              # parallel lists (index-aligned)
+      root_gmail: [x, y]
+      repo: [RepoA, RepoB]
+    """
+    raw_accounts = site.get("github_accounts")
+    if isinstance(raw_accounts, list) and raw_accounts:
+        accounts: List[Dict[str, str]] = []
+        for item in raw_accounts:
+            if not isinstance(item, dict):
+                continue
+            username = _scalar_str(
+                item.get("github_username")
+                or item.get("username")
+                or item.get("owner")
+            )
+            if not username:
+                continue
+            gmail = _scalar_str(
+                item.get("root_gmail")
+                or item.get("github_gmail")
+                or item.get("gmail")
+                or item.get("email")
+            )
+            repo = _scalar_str(item.get("repo") or item.get("repository"))
+            accounts.append({
+                "github_username": username,
+                "root_gmail": gmail,
+                "repo": repo,
+            })
+        if accounts:
+            return accounts
+
+    users = _as_aligned_list(site.get("github_username") or site.get("github_owner"))
+    gmails = _as_aligned_list(
+        site.get("root_gmail")
+        if site.get("root_gmail") is not None
+        else (site.get("github_gmail") if site.get("github_gmail") is not None else site.get("github_email"))
+    )
+    repos = [r for r in _as_aligned_list(site.get("repo")) if r]
+
+    # Infer repos from workflows when top-level repo list is missing.
+    if not repos:
+        inferred_order: List[str] = []
+        inferred_by_user: Dict[str, str] = {}
+        for entry in site.get("workflows") or []:
+            if not isinstance(entry, dict):
+                continue
+            owner = _scalar_str(entry.get("github_username") or entry.get("owner"))
+            repo = _scalar_str(entry.get("repo"))
+            if not repo:
+                continue
+            if repo not in inferred_order:
+                inferred_order.append(repo)
+            if owner and owner not in inferred_by_user:
+                inferred_by_user[owner] = repo
+        if len(users) > 1 and inferred_by_user:
+            repos = [inferred_by_user.get(u, "") for u in users if u]
+        else:
+            repos = inferred_order
+
+    accounts: List[Dict[str, str]] = []
+
+    # One GitHub user → many repos (e.g. sheeel): emit one account row per repo.
+    if len(users) == 1 and len(repos) > 1:
+        username = users[0]
+        gmail = _aligned_value(gmails, 0, 1)
+        for repo in repos:
+            if not repo:
+                continue
+            accounts.append({
+                "github_username": username,
+                "root_gmail": gmail,
+                "repo": repo,
+            })
+        return accounts
+
+    # N users ↔ N repos (index-aligned), e.g. DUAE.
+    for i, username in enumerate(users):
+        if not username:
+            continue
+        accounts.append({
+            "github_username": username,
+            "root_gmail": _aligned_value(gmails, i, len(users)),
+            "repo": _aligned_value(repos, i, len(users)),
+        })
+    return accounts
+
+
+def primary_github_username(site: Dict) -> str:
+    accounts = resolve_github_accounts(site)
+    return accounts[0]["github_username"] if accounts else ""
+
+
+def primary_repo(site: Dict) -> str:
+    """First repo only — workflows should set repo per entry when a site has many."""
+    accounts = resolve_github_accounts(site)
+    if accounts and accounts[0].get("repo"):
+        return accounts[0]["repo"]
+    return _scalar_str(site.get("repo"))
+
+
+def format_github_usernames(site: Dict, sep: str = ", ") -> Optional[str]:
+    seen = set()
+    names: List[str] = []
+    for account in resolve_github_accounts(site):
+        name = account.get("github_username") or ""
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        names.append(name)
+    return sep.join(names) if names else None
+
+
+def format_root_gmails(site: Dict, sep: str = ", ") -> Optional[str]:
+    """Joined non-empty root_gmail values (deduped, account order)."""
+    seen = set()
+    gmails: List[str] = []
+    for account in resolve_github_accounts(site):
+        gmail = account.get("root_gmail") or ""
+        if not gmail or gmail in seen:
+            continue
+        seen.add(gmail)
+        gmails.append(gmail)
+    return sep.join(gmails) if gmails else None
+
+
+def format_repos(site: Dict, sep: str = ", ") -> Optional[str]:
+    """All repos for the site (top-level list + workflow entries), deduped."""
+    seen = set()
+    repos: List[str] = []
+
+    def _add(repo: str) -> None:
+        if repo and repo not in seen:
+            seen.add(repo)
+            repos.append(repo)
+
+    for repo in _as_aligned_list(site.get("repo")):
+        _add(repo)
+    for account in resolve_github_accounts(site):
+        _add(account.get("repo") or "")
+    for entry in site.get("workflows") or []:
+        if isinstance(entry, dict):
+            _add(_scalar_str(entry.get("repo")))
+    return sep.join(repos) if repos else None
+
+
+def resolve_root_gmail_for_username(site: Dict, username: str) -> str:
+    target = (username or "").strip()
+    if not target:
+        return ""
+    for account in resolve_github_accounts(site):
+        if account["github_username"] == target:
+            return account.get("root_gmail") or ""
+    return ""
+
+
 def resolve_workflow_names(site: Dict) -> List[str]:
     """Ordered scraper workflow display names (same repo unless entry specifies repo)."""
     return [e["name"] for e in parse_workflow_entries(site)]
@@ -83,9 +282,10 @@ def parse_workflow_entries(site: Dict) -> List[Dict[str, str]]:
       workflows:
         - name: "CF Daily Scrapers - All Categories (Cloudflare R2)"
           repo: Codinity
+      github_username as scalar or list (default owner = first username)
     """
-    owner = (site.get("github_username") or site.get("github_owner") or "").strip()
-    default_repo = (site.get("repo") or "").strip()
+    owner = primary_github_username(site)
+    default_repo = primary_repo(site)
     raw: Union[str, List[Any], None] = site.get("workflows")
 
     if raw is None:
@@ -123,7 +323,9 @@ def parse_workflow_entries(site: Dict) -> List[Dict[str, str]]:
             name = (item.get("name") or item.get("workflow") or "").strip()
             if not name:
                 continue
-            entry_owner = (item.get("owner") or item.get("github_username") or owner).strip()
+            entry_owner = _scalar_str(
+                item.get("owner") or item.get("github_username") or owner
+            )
             entry_repo = (item.get("repo") or default_repo).strip()
             if not entry_owner or not entry_repo:
                 continue
@@ -162,6 +364,8 @@ def merge_registry_site(site: Dict, registry: Optional[Dict]) -> Dict:
     merged = dict(site)
     for key in (
         "github_username",
+        "root_gmail",
+        "github_accounts",
         "repo",
         "run_place",
         "schedule",
@@ -392,12 +596,17 @@ def build_scraper_run_meta(
             "github_repository": os.environ.get("GITHUB_REPOSITORY", ""),
         })
 
+    accounts = resolve_github_accounts(site)
+    root_gmail = format_root_gmails(site) or ""
+
     if pipeline:
         result = dict(pipeline)
         result["monitor_run"] = monitor_meta
-        github_gmail = (site.get("github_gmail") or site.get("github_email") or "").strip()
-        if github_gmail:
-            result["github_gmail"] = github_gmail
+        if accounts:
+            result["github_accounts"] = accounts
+        if root_gmail:
+            result["root_gmail"] = root_gmail
+            result["github_gmail"] = root_gmail  # backward-compatible alias
         return result
 
     configured = resolve_workflow_names(site)
@@ -416,7 +625,9 @@ def build_scraper_run_meta(
         "monitor_run": monitor_meta,
         "source": "registry_fallback",
     }
-    github_gmail = (site.get("github_gmail") or site.get("github_email") or "").strip()
-    if github_gmail:
-        result["github_gmail"] = github_gmail
+    if accounts:
+        result["github_accounts"] = accounts
+    if root_gmail:
+        result["root_gmail"] = root_gmail
+        result["github_gmail"] = root_gmail  # backward-compatible alias
     return result

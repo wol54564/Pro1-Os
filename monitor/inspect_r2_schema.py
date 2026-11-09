@@ -77,6 +77,7 @@ from monitor_r2 import (
     report_r2_key,
     resolve_site_folder,
 )
+from website_ads_counter import count_4sale_ads_published_on
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -1394,6 +1395,26 @@ def main():
         "scrapers":  {},
         "alerts":    [],
     }
+
+    if str(site.get("folder") or "").strip().lower() == "4sale":
+        full_report["website_published_ads_date"] = listing_date_str
+        try:
+            website_ads = count_4sale_ads_published_on(listing_date_str)
+            full_report.update({
+                "website_published_ads": website_ads["count"],
+                "website_published_ads_source": website_ads["source"],
+                "website_published_ads_status": "ok",
+                "website_published_ads_categories_scanned": website_ads["categories_scanned"],
+                "website_published_ads_pages_scanned": website_ads["pages_scanned"],
+            })
+        except Exception as exc:
+            log.exception("Could not count 4Sale website ads published on %s", listing_date_str)
+            full_report.update({
+                "website_published_ads": None,
+                "website_published_ads_source": "q84sale_public_listing_pages",
+                "website_published_ads_status": "error",
+                "website_published_ads_error": str(exc)[:500],
+            })
 
     scrapers_cfg = config.get("scrapers", [])
     log.info(f"Processing {len(scrapers_cfg)} scrapers …")
